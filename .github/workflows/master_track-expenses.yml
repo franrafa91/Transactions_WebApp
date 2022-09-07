@@ -60,4 +60,4 @@ jobs:
         with:
           app-name: 'track-expenses'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_9A46F8E6B8AF4557846825C299C97F04 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_07A3AA1422B644409907383812DE424D }}
