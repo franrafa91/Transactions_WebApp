@@ -106,7 +106,7 @@ def json():
             out = list(trans_pars.values())
             pars = [out[i] for i in [0,1,2,3,4,5,6]]
             pars.append(dt.datetime.now())
-            pars[3] = dt.to_datetime(pars[3])
+            pars[3] = dt.datetime.strptime(pars[3],'%Y-%m-%dT%H:%M')
             for i in range(0,len(pars)):
                 if pars[i] == '': pars[i]=None
             new_transaction(pars)
