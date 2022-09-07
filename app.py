@@ -103,30 +103,29 @@ def new_transfer(pars):
 
     return ("nothing")
 
-def create_app():
-    app = Flask(__name__, template_folder='templates', static_folder='static')
+app = Flask(__name__, template_folder='templates', static_folder='static')
+@app.route("/", methods=["GET","POST"])
+def json():
+    if request.method == "POST":
+        if request.form['Operación'] == 'Transacción':
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            pars = [out[i] for i in [0,1,2,3,4,5,6]]
+            pars.append(dt.datetime.now())
+            pars[3] = dt.to_datetime(pars[3])
+            for i in range(0,len(pars)):
+                if pars[i] == '': pars[i]=None
+            new_transaction(pars)
+        elif request.form['Operación'] == 'Transferencia':
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            pars = [out[i] for i in [0,1,3,4,5,6,7,8]]
+            pars.append(dt.datetime.now())
+            pars[2] = dt.to_datetime(pars[2])
+            for i in range(0,len(pars)):
+                if pars[i] == '': pars[i]=None
+            new_transfer(pars)
+    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10())
 
-
-    @app.route("/", methods=["GET","POST"])
-    def json():
-        if request.method == "POST":
-            if request.form['Operación'] == 'Transacción':
-                trans_pars = dict(request.form)
-                out = list(trans_pars.values())
-                pars = [out[i] for i in [0,1,2,3,4,5,6]]
-                pars.append(dt.datetime.now())
-                pars[3] = dt.to_datetime(pars[3])
-                for i in range(0,len(pars)):
-                    if pars[i] == '': pars[i]=None
-                new_transaction(pars)
-            elif request.form['Operación'] == 'Transferencia':
-                trans_pars = dict(request.form)
-                out = list(trans_pars.values())
-                pars = [out[i] for i in [0,1,3,4,5,6,7,8]]
-                pars.append(dt.datetime.now())
-                pars[2] = dt.to_datetime(pars[2])
-                for i in range(0,len(pars)):
-                    if pars[i] == '': pars[i]=None
-                new_transfer(pars)
-        return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10())
-    return app
+if __name__ == '__main__':
+    app.run()
