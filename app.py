@@ -4,7 +4,7 @@ import datetime as dt
 
 # FUNCTIONS TO QUERY DATABASE FOR INFO TO SHOW IN PAGE
 def gettop10():
-  cnxn = po.connect(driver='{SQL Server Native Client 11.0}',\
+  cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
                     server='franrafa91.database.windows.net',\
                     database='basic_sql',\
                     uid='reader',\
@@ -16,7 +16,7 @@ def gettop10():
   return results
 
 def getacts():
-    cnxn = po.connect(driver='{SQL Server Native Client 11.0}',\
+    cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
                     server='franrafa91.database.windows.net',\
                     database='basic_sql',\
                     uid='reader',pwd='Test_Password',autocommit=True)
@@ -27,7 +27,7 @@ def getacts():
     return acts
 
 def getcategs():
-    cnxn = po.connect(driver='{SQL Server Native Client 11.0}',\
+    cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
                     server='franrafa91.database.windows.net',\
                     database='basic_sql',\
                     uid='reader',pwd='Test_Password',autocommit=True)
@@ -40,7 +40,7 @@ def getcategs():
 # FUNCTIONS TO POST TO DATABASE
 def new_transaction(pars):
     try:
-        cnxn = po.connect(driver='{SQL Server Native Client 11.0}',\
+        cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
                         server='franrafa91.database.windows.net',\
                         database='basic_sql',\
                         uid='reader',pwd='Test_Password',autocommit=True)
@@ -70,7 +70,7 @@ def new_transaction(pars):
 
 def new_transfer(pars):
     try:
-        cnxn = po.connect(driver='{SQL Server Native Client 11.0}',\
+        cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
                         server='franrafa91.database.windows.net',\
                         database='basic_sql',\
                         uid='reader',pwd='Test_Password',autocommit=True)
