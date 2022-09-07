@@ -4,22 +4,19 @@ import datetime as dt
 
 # FUNCTIONS TO QUERY DATABASE FOR INFO TO SHOW IN PAGE
 def gettop10():
-  cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
-                    server='franrafa91.database.windows.net',\
-                    database='basic_sql',\
-                    uid='reader',\
-                    pwd='Test_Password', autocommit=True)
-  cursor = cnxn.cursor()
-  cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Input Desc")
-  results = cursor.fetchall()
-  cnxn.close()
-  return results
+    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+    cursor = cnxn.cursor()
+    cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Input Desc")
+    results = cursor.fetchall()
+    cnxn.close()
+    return results
 
 def getacts():
-    cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
-                    server='franrafa91.database.windows.net',\
-                    database='basic_sql',\
-                    uid='reader',pwd='Test_Password',autocommit=True)
+    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
     cursor = cnxn.cursor()
     cursor.execute("SELECT [Nombre Cuenta] from Cuentas Where Activa in (1,2,3) Order By Activa Asc")
     acts = cursor.fetchall()
@@ -27,10 +24,9 @@ def getacts():
     return acts
 
 def getcategs():
-    cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
-                    server='franrafa91.database.windows.net',\
-                    database='basic_sql',\
-                    uid='reader',pwd='Test_Password',autocommit=True)
+    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
     cursor = cnxn.cursor()
     cursor.execute("Select Categoría from Categories")
     cats = cursor.fetchall()
@@ -40,10 +36,9 @@ def getcategs():
 # FUNCTIONS TO POST TO DATABASE
 def new_transaction(pars):
     try:
-        cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
-                        server='franrafa91.database.windows.net',\
-                        database='basic_sql',\
-                        uid='reader',pwd='Test_Password',autocommit=True)
+        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
                             
         cursor = cnxn.cursor()
         storedProc = "EXEC dbo.WebTransaction @Cuenta  = ?,\
@@ -70,10 +65,9 @@ def new_transaction(pars):
 
 def new_transfer(pars):
     try:
-        cnxn = po.connect(#driver='{SQL Server Native Client 11.0}',\
-                        server='franrafa91.database.windows.net',\
-                        database='basic_sql',\
-                        uid='reader',pwd='Test_Password',autocommit=True)
+        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
                             
         cursor = cnxn.cursor()
         storedProc = "EXEC dbo.WebTransfer \
