@@ -115,7 +115,7 @@ def json():
             out = list(trans_pars.values())
             pars = [out[i] for i in [0,1,3,4,5,6,7,8]]
             pars.append(dt.datetime.now())
-            pars[2] = dt.to_datetime(pars[2])
+            pars[2] = dt.datetime.strptime(pars[2],'%Y-%m-%dT%H:%M')
             for i in range(0,len(pars)):
                 if pars[i] == '': pars[i]=None
             new_transfer(pars)
