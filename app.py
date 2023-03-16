@@ -9,8 +9,17 @@ def gettop10():
             database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
     cursor = cnxn.cursor()
     cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Input Desc")
-    results = cursor.fetchall()
+    columns = [column[0] for column in cursor.description]
+    results = []
+    for row in cursor.fetchall():
+        row = (v.strftime('%d-%m-%y %H:%M') if isinstance(v,dt.datetime) else v for v in row)
+        row = (v.rstrip() if isinstance(v,str) else v for v in row)
+        row = ('' if v is None else v for v in row)
+        # print(v for v in row)
+        results.append(dict(zip(columns, row)))
+    # results = cursor.fetchall()
     cnxn.close()
+    # print(results[0])
     return results
 
 def getacts():
@@ -97,6 +106,37 @@ def new_transfer(pars):
 
     return ("nothing")
 
+def modify_transaction(pars):
+    try:
+        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+                            
+        cursor = cnxn.cursor()
+        storedProc = "EXEC dbo.WebModification @ID = ? ,\
+            @Cuenta  = ?,\
+            @Transfer = ?,\
+            @Payee  = ?,\
+            @Categoria  = ?,\
+            @Fecha  = ?,\
+            @Monto  = ?,\
+            @Memo  = ?,\
+            @Description = ?,\
+            @Now  = ?"
+        params = tuple(pars)
+        
+        cursor.execute(storedProc,params)
+        cursor.close()
+        del cursor
+        
+        cnxn.commit()
+        cnxn.close()
+
+    except Exception as e:
+        print("Error: %s" % e)
+
+    return ("nothing")
+
 app = Flask(__name__, template_folder='templates', static_folder='static')
 @app.route("/", methods=["GET","POST"])
 def json():
@@ -119,6 +159,21 @@ def json():
             for i in range(0,len(pars)):
                 if pars[i] == '': pars[i]=None
             new_transfer(pars)
+        elif request.form['Operación'] == 'Modificación':
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            if (len(out) == 9):
+                pars = [out[0], out[1], '', out[2], out[3], out[4], out[5], out[6], out[7]]
+            else:
+                pars = [out[i] for i in [0,1,2,3,4,5,6,7,8]]
+            for i in range(0,len(pars)):
+                if pars[i] == '': pars[i]=None
+            pars[5] = dt.datetime.strptime(pars[5],'%Y-%m-%dT%H:%M')
+            pars.append(dt.datetime.now())
+            # print(pars)
+            modify_transaction(pars)
+
+            
     return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10())
 
 if __name__ == '__main__':
