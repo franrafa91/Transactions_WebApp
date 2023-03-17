@@ -3,12 +3,28 @@ import pypyodbc as po
 import datetime as dt
 
 # FUNCTIONS TO QUERY DATABASE FOR INFO TO SHOW IN PAGE
-def gettop10():
+def gettop10(pars):
     cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
             server=franrafa91.database.windows.net;\
             database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
     cursor = cnxn.cursor()
-    cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Input Desc")
+    if pars == None:
+        cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Fecha Desc, Input Desc")
+    else:
+        query = "SELECT TOP(10) * FROM dbo.Transacciones WHERE "
+        query = query + (("Cuenta = '"+ pars[0] + "' and ") if pars[0] != None else '')
+        query = query + (("Transfer = '"+ pars[1] + "' and ") if pars[1] != None else '')
+        query = query + (("Payee like '%"+ pars[2] + "%' and ") if pars[2] != None else '')
+        query = query + (("Categoría = '"+ pars[3] + "' and ") if pars[3] != None else '')
+        query = query + (("Fecha > '"+ pars[4].replace("T"," ") + "' and ") if pars[4] != None else '')
+        query = query + (("Fecha < '"+ pars[5].replace("T"," ") + "' and ") if pars[5] != None else '')
+        query = query + (("Monto = '"+ pars[6] + "' and ") if pars[6] != None else '')
+        query = query + (("Memo = '"+ pars[7] + "' and ") if pars[7] != None else '')
+        query = query + (("Description like '%"+ pars[8] + "%' and ") if pars[8] != None else '')
+        # print(query)
+        query = query[:-4] + ' Order By Fecha Desc, Input Desc'
+        print(query)
+        cursor.execute(query)
     columns = [column[0] for column in cursor.description]
     results = []
     for row in cursor.fetchall():
@@ -140,6 +156,7 @@ def modify_transaction(pars):
 app = Flask(__name__, template_folder='templates', static_folder='static')
 @app.route("/", methods=["GET","POST"])
 def json():
+    search = None
     if request.method == "POST":
         if request.form['Operación'] == 'Transacción':
             trans_pars = dict(request.form)
@@ -172,9 +189,16 @@ def json():
             pars.append(dt.datetime.now())
             # print(pars)
             modify_transaction(pars)
-
-            
-    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10())
+        elif request.form['Operación'] == 'Buscar':
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            out[6] = float(out[6])
+            out = [el if el != '' else None for el in out]
+            if (float(out[6])==-0 or float(out[6])==0):
+                out[6] = None
+            print(out)
+            search = out
+    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10(search))
 
 if __name__ == '__main__':
     app.run()
