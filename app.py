@@ -153,10 +153,35 @@ def modify_transaction(pars):
 
     return ("nothing")
 
+def delete_transaction(pars):
+    try:
+        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
+            server=franrafa91.database.windows.net;\
+            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+
+        cursor = cnxn.cursor()
+        storedProc = "EXEC dbo.WebDeletion @ID = ?"
+        params = tuple(pars)
+
+        cursor.execute(storedProc,params)
+        cursor.close()
+        del cursor
+
+        cnxn.commit()
+        cnxn.close()
+
+    except Exception as e:
+        print("Error: %s" % e)
+
+    return ("nothing") 
+
 app = Flask(__name__, template_folder='templates', static_folder='static')
+search = None
+
 @app.route("/", methods=["GET","POST"])
 def json():
-    search = None
+    global search
+    # search = None
     if request.method == "POST":
         if request.form['Operación'] == 'Transacción':
             trans_pars = dict(request.form)
@@ -189,6 +214,11 @@ def json():
             pars.append(dt.datetime.now())
             # print(pars)
             modify_transaction(pars)
+        elif request.form['Operación'] == 'Eliminar':
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            pars = [out[0]]
+            delete_transaction(pars)
         elif request.form['Operación'] == 'Buscar':
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
@@ -198,6 +228,8 @@ def json():
                 out[6] = None
             print(out)
             search = out
+        elif request.form['Operación'] == 'Clear Search':
+            search = None
     return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10(search))
 
 if __name__ == '__main__':
