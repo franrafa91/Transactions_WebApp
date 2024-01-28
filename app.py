@@ -1,17 +1,26 @@
 from flask import Flask, render_template, request, make_response
-import pypyodbc as po 
+import psycopg2
+import os 
 import datetime as dt
+
+## Connection Parameters
+dbname = 'trans_app'
+user = 'frafa'
+host = 'localhost'
+port = 5432
+
+## Application Parameters
+#os.environ['PGPASSFILE'] = '/'+user+'/.pgpass'
+nb_records = 15
 
 # FUNCTIONS TO QUERY DATABASE FOR INFO TO SHOW IN PAGE
 def gettop10(pars):
-    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
     cursor = cnxn.cursor()
     if pars == None:
-        cursor.execute("SELECT TOP(10) * FROM dbo.Transacciones Order By Fecha Desc, Input Desc")
+        cursor.execute("SELECT * FROM transacciones Order By Fecha Desc, Input Desc limit {}".format(nb_records))
     else:
-        query = "SELECT TOP(10) * FROM dbo.Transacciones WHERE "
+        query = "SELECT * FROM dbo.Transacciones WHERE "
         query = query + (("Cuenta = '"+ pars[0] + "' and ") if pars[0] != None else '')
         query = query + (("Transfer = '"+ pars[1] + "' and ") if pars[1] != None else '')
         query = query + (("Payee like '%"+ pars[2] + "%' and ") if pars[2] != None else '')
@@ -23,6 +32,7 @@ def gettop10(pars):
         query = query + (("Description like '%"+ pars[8] + "%' and ") if pars[8] != None else '')
         # print(query)
         query = query[:-4] + ' Order By Fecha Desc, Input Desc'
+        query = query + 'limit {}'.format(nb_records)
         print(query)
         cursor.execute(query)
     columns = [column[0] for column in cursor.description]
@@ -39,19 +49,15 @@ def gettop10(pars):
     return results
 
 def getacts():
-    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
     cursor = cnxn.cursor()
-    cursor.execute("SELECT [Nombre Cuenta] from Cuentas Where Activa in (1,2,3) Order By Activa Asc")
+    cursor.execute('SELECT "Nombre Cuenta" from Cuentas Where Activa in (1,2,3) Order By Activa Asc')
     acts = cursor.fetchall()
     cnxn.close()
     return acts
 
 def getcategs():
-    cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
+    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
     cursor = cnxn.cursor()
     cursor.execute("Select Categoría from Categories")
     cats = cursor.fetchall()
@@ -61,26 +67,14 @@ def getcategs():
 # FUNCTIONS TO POST TO DATABASE
 def new_transaction(pars):
     try:
-        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
-                            
+        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
         cursor = cnxn.cursor()
-        storedProc = "EXEC dbo.WebTransaction @Cuenta  = ?,\
-            @Payee  = ?,\
-            @Categoria  = ?,\
-            @Fecha  = ?,\
-            @Monto  = ?,\
-            @Memo  = ?,\
-            @Description = ?,\
-            @Now  = ?"
         params = tuple(pars)
-        
-        cursor.execute(storedProc,params)
+        cursor.execute("CALL webtransaction(%s, %s, %s, %s, %s, %s, %s, %s);",
+                       [pars[i] for i in [0,6,2,1,3,4,5,7]])
+        cnxn.commit()
         cursor.close()
         del cursor
-        
-        cnxn.commit()
         cnxn.close()
 
     except Exception as e:
@@ -90,31 +84,14 @@ def new_transaction(pars):
 
 def new_transfer(pars):
     try:
-        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
-                            
+        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
         cursor = cnxn.cursor()
-        storedProc = "EXEC dbo.WebTransfer \
-            @Cuenta  = ?,\
-            @Payee  = ?,\
-            @Fecha  = ?,\
-            @Monto  = ?,\
-            @Memo  = ?,\
-            @Description = ?,\
-            @Transfer = ?,\
-            @Recibido = ?,\
-            @Now  = ?"
         params = tuple(pars)
-        
-        # Execute Stored Procedure With Parameters
-        cursor.execute(storedProc,params)
-        # Iterate the cursor
+        cursor.execute("CALL webtransfer(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                       [pars[i] for i in [0,6,5,1,2,3,7,4,8]])
+        cnxn.commit()
         cursor.close()
         del cursor
-        
-        cnxn.commit()
-        # Close the database connection
         cnxn.close()
 
     except Exception as e:
@@ -124,28 +101,13 @@ def new_transfer(pars):
 
 def modify_transaction(pars):
     try:
-        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
-                            
+        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
         cursor = cnxn.cursor()
-        storedProc = "EXEC dbo.WebModification @ID = ? ,\
-            @Cuenta  = ?,\
-            @Transfer = ?,\
-            @Payee  = ?,\
-            @Categoria  = ?,\
-            @Fecha  = ?,\
-            @Monto  = ?,\
-            @Memo  = ?,\
-            @Description = ?,\
-            @Now  = ?"
-        params = tuple(pars)
-        
-        cursor.execute(storedProc,params)
+        cursor.execute("CALL webmodification(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                       pars) #no reorganizing necessary
+        cnxn.commit()
         cursor.close()
         del cursor
-        
-        cnxn.commit()
         cnxn.close()
 
     except Exception as e:
@@ -155,19 +117,13 @@ def modify_transaction(pars):
 
 def delete_transaction(pars):
     try:
-        cnxn = po.connect('driver={ODBC Driver 17 for SQL Server};\
-            server=franrafa91.database.windows.net;\
-            database=basic_sql;uid=reader;pwd=Test_Password; autocommit=True')
-
+        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
         cursor = cnxn.cursor()
-        storedProc = "EXEC dbo.WebDeletion @ID = ?"
-        params = tuple(pars)
-
-        cursor.execute(storedProc,params)
+        cursor.execute("CALL webdeletion(%s);",
+                       pars) #no reorganizing necessary
+        cnxn.commit()
         cursor.close()
         del cursor
-
-        cnxn.commit()
         cnxn.close()
 
     except Exception as e:
