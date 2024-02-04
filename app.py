@@ -1,13 +1,15 @@
 from flask import Flask, render_template, request, make_response
 import psycopg2
-import os 
+import sys, secrets#, os
 import datetime as dt
 
 ## Connection Parameters
 dbname = 'trans_app'
-user = 'frafa'
 host = 'localhost'
 port = 5432
+
+port_serve = 5000 if (len(sys.argv) == 1) else sys.argv[1]
+secret = secrets.token_urlsafe(6)
 
 ## Application Parameters
 #os.environ['PGPASSFILE'] = '/'+user+'/.pgpass'
@@ -15,12 +17,12 @@ nb_records = 15
 
 # FUNCTIONS TO QUERY DATABASE FOR INFO TO SHOW IN PAGE
 def gettop10(pars):
-    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+    cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
     cursor = cnxn.cursor()
     if pars == None:
         cursor.execute("SELECT * FROM transacciones Order By Fecha Desc, Input Desc limit {}".format(nb_records))
     else:
-        query = "SELECT * FROM dbo.Transacciones WHERE "
+        query = "SELECT * FROM Transacciones WHERE "
         query = query + (("Cuenta = '"+ pars[0] + "' and ") if pars[0] != None else '')
         query = query + (("Transfer = '"+ pars[1] + "' and ") if pars[1] != None else '')
         query = query + (("Payee like '%"+ pars[2] + "%' and ") if pars[2] != None else '')
@@ -30,10 +32,9 @@ def gettop10(pars):
         query = query + (("Monto = '"+ pars[6] + "' and ") if pars[6] != None else '')
         query = query + (("Memo = '"+ pars[7] + "' and ") if pars[7] != None else '')
         query = query + (("Description like '%"+ pars[8] + "%' and ") if pars[8] != None else '')
-        # print(query)
-        query = query[:-4] + ' Order By Fecha Desc, Input Desc'
+        query = query[:-4] + ' Order By Fecha Desc, Input Desc '
         query = query + 'limit {}'.format(nb_records)
-        print(query)
+        #print(query)
         cursor.execute(query)
     columns = [column[0] for column in cursor.description]
     results = []
@@ -49,15 +50,29 @@ def gettop10(pars):
     return results
 
 def getacts():
-    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+    cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
     cursor = cnxn.cursor()
-    cursor.execute('SELECT "Nombre Cuenta" from Cuentas Where Activa in (1,2,3) Order By Activa Asc')
+    cursor.execute("select cuenta from \
+                    (select cuenta, count(id) as count from transacciones where \
+                    input>'{:%Y-%m-%d}' group by cuenta order by count desc);"\
+                   .format(dt.datetime.now()-dt.timedelta(180)))
+    acts = cursor.fetchall()
+    cnxn.close()
+    return acts
+
+def getpayees():
+    cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
+    cursor = cnxn.cursor()
+    cursor.execute("select payee from \
+                    (select payee, count(id) as count from transacciones where \
+                    input>'{:%Y-%m-%d}' group by payee order by count desc limit 100);"\
+                   .format(dt.datetime.now()-dt.timedelta(180)))
     acts = cursor.fetchall()
     cnxn.close()
     return acts
 
 def getcategs():
-    cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+    cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
     cursor = cnxn.cursor()
     cursor.execute("Select Categoría from Categories")
     cats = cursor.fetchall()
@@ -67,9 +82,8 @@ def getcategs():
 # FUNCTIONS TO POST TO DATABASE
 def new_transaction(pars):
     try:
-        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+        cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
         cursor = cnxn.cursor()
-        params = tuple(pars)
         cursor.execute("CALL webtransaction(%s, %s, %s, %s, %s, %s, %s, %s);",
                        [pars[i] for i in [0,6,2,1,3,4,5,7]])
         cnxn.commit()
@@ -84,9 +98,8 @@ def new_transaction(pars):
 
 def new_transfer(pars):
     try:
-        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+        cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
         cursor = cnxn.cursor()
-        params = tuple(pars)
         cursor.execute("CALL webtransfer(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
                        [pars[i] for i in [0,6,5,1,2,3,7,4,8]])
         cnxn.commit()
@@ -101,9 +114,9 @@ def new_transfer(pars):
 
 def modify_transaction(pars):
     try:
-        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+        cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
         cursor = cnxn.cursor()
-        cursor.execute("CALL webmodification(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
+        cursor.execute("CALL webmodification(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                        pars) #no reorganizing necessary
         cnxn.commit()
         cursor.close()
@@ -117,7 +130,7 @@ def modify_transaction(pars):
 
 def delete_transaction(pars):
     try:
-        cnxn = psycopg2.connect(dbname=dbname, user=user, host=host, port=port)
+        cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
         cursor = cnxn.cursor()
         cursor.execute("CALL webdeletion(%s);",
                        pars) #no reorganizing necessary
@@ -134,8 +147,18 @@ def delete_transaction(pars):
 app = Flask(__name__, template_folder='templates', static_folder='static')
 search = None
 
+## Define Shutdown Method for Application
+from flask import request
+def shutdown_server():
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        raise RuntimeError('Not running with the Werkzeug Server')
+    func()
+
 @app.route("/", methods=["GET","POST"])
 def json():
+    if request.args.get('secret', None) != secret:
+        return render_template('out.html')
     global search
     # search = None
     if request.method == "POST":
@@ -182,11 +205,12 @@ def json():
             out = [el if el != '' else None for el in out]
             if (float(out[6])==-0 or float(out[6])==0):
                 out[6] = None
-            print(out)
+            #print(out)
             search = out
         elif request.form['Operación'] == 'Clear Search':
             search = None
-    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),top=gettop10(search))
+    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),payees=getpayees(),top=gettop10(search), secret=secret)
 
 if __name__ == '__main__':
-    app.run()
+    print("Secret Key for Session: "+secret)
+    app.run(host="0.0.0.0", port=port_serve)

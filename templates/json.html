@@ -88,7 +88,7 @@ function closemodal(){
   <div class='container-sm'>
     <div class="row justify-content-md-center">
     <h2>Transaction Details</h2>
-      <form action="/" method="post" class="input group mb-3">
+      <form action="/?secret={{secret}}" method="post" class="input group mb-3">
         <div class="form-group">
           <div class="row">
             <div class="col-md-4">
@@ -101,7 +101,12 @@ function closemodal(){
             </div>
             <div class="col-md-4">
               <label for = "Payee">Payee:</label>
-              <input type="text" name="Payee" id="Payee" placeholder="Payee" class="form-control">
+              <input type="text" name="Payee" id="Payee" placeholder="Payee" list="payeelist" class="form-control">
+              <datalist id="payeelist">
+                {% for u in payees %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
             </div>
             <div class="col-md-4">
               <label for = "Categoria">Categoría:</label>
@@ -175,7 +180,7 @@ function closemodal(){
 <div class="container-lg">
   <!-- <div class="row"> -->
     <div class="d-grid d-md-block">
-      <form action="/" method="post" class="input group mb-3">
+      <form action="/?secret={{secret}}" method="post" class="input group mb-3">
       <button class="btn btn-outline-success" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasTop" aria-controls="offcanvasTop">Search Transactions</button>
       <input type="submit" name="Operación" class="btn btn-outline-secondary" value="Clear Search"/>
       </form>
@@ -224,7 +229,7 @@ function closemodal(){
     <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close" width="0.5em"></button>
   </div>
   <div class="offcanvas-body">
-    <form action="/" method="post" class="input group mb-3">
+    <form action="/?secret={{secret}}" method="post" class="input group mb-3">
       <div class="form-group">
         <div class="row">
           <div class="col-md-3">
@@ -247,8 +252,13 @@ function closemodal(){
           </div>
           <div class="col-md-3">
             <label for = "Payee">Payee:</label>
-            <input type="text" name="Payee" id="Payee-search" placeholder="Payee" class="form-control">
-          </div>
+            <input type="text" name="Payee" id="Payee-search" placeholder="Payee" list="payeelist" class="form-control">
+            <datalist id="payeelist">
+              {% for u in payees %}
+              <option value="{{u[0]}}">{{u[0]}}</option>
+              {% endfor %}
+            </datalist>
+        </div>
           <div class="col-md-3">
             <label for = "Categoria">Categoría:</label>
             <input type="text" name="Categoria" id="Categoria-search" placeholder="Categoría" list="CatList" class="form-control">
@@ -305,7 +315,7 @@ function closemodal(){
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-            <form action="/" method="post" class="input group mb-3">
+            <form action="/?secret={{secret}}" method="post" class="input group mb-3">
               <div class="form-group">
                 <div class="row">
                   <input type="hidden" name="ID" id="ID-modal" value=0>
@@ -327,8 +337,13 @@ function closemodal(){
                   </div>
                   <div class="col-md-3">
                     <label for = "Payee">Payee:</label>
-                    <input type="text" name="Payee" id="Payee-modal" placeholder="Payee" class="form-control">
-                  </div>
+                    <input type="text" name="Payee" id="Payee-modal" placeholder="Payee" list="payeelist" class="form-control">
+                    <datalist id="payeelist">
+                      {% for u in payees %}
+                      <option value="{{u[0]}}">{{u[0]}}</option>
+                      {% endfor %}
+                    </datalist>
+                        </div>
                   <div class="col-md-3">
                     <label for = "Categoria">Categoría:</label>
                     <input type="text" name="Categoria" id="Categoria-modal" placeholder="Categoría" list="CatList" class="form-control">
