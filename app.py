@@ -8,7 +8,11 @@ import numpy as np
 
 ## Connection Parameters
 port_serve = 5000 if (len(sys.argv) == 1) else sys.argv[1]
-secret = "test" if (port_serve == 5000) else secrets.token_urlsafe(6)
+if (port_serve == 5000):
+    secret = "test"
+else: #secrets.token_urlsafe(6)
+    with open('./secret.txt','r') as file:
+        secret = file.readline().strip('\n')
 
 from os.path import expanduser
 with open(expanduser('~/.pgpass'), 'r') as f:
@@ -227,7 +231,7 @@ import xmltodict, requests
 hnl_usd = None
 usd_eur = None
 
-bch_data = pd.read_excel("https://www.bch.hn/estadisticos/GIE/LIBTipo%20de%20cambio/Precio%20Promedio%20Diario%20del%20D%C3%B3lar.xlsx",header=6)[["Fecha","Compra 1/"]].rename(columns={"Compra 1/":"Tasa"})
+bch_data = pd.read_excel("http://www.bch.hn/estadisticos/GIE/LIBTipo%20de%20cambio/Precio%20Promedio%20Diario%20del%20D%C3%B3lar.xlsx",header=6)[["Fecha","Compra 1/"]].rename(columns={"Compra 1/":"Tasa"})
 hnl_usd = bch_data[bch_data["Fecha"].map(lambda x: isinstance(x,dt.datetime))]
 hnl_usd["Fecha"] = pd.to_datetime(hnl_usd["Fecha"], format="%Y-%m-%d 00:00:00")
 
@@ -269,6 +273,7 @@ def balance(pars):
         balance = pd.read_sql(query,conn)
     now = dt.datetime.now()
     now = now if (pars == None or pars[0:9] == [None]*9) else (now if pars[5] == None else pd.to_datetime(pars[5].replace("T"," ")))
+    balance = pd.merge(pd.DataFrame({'cuenta':[el[0] for el in getacts()]}),balance,on='cuenta')
     balance["balance_eur"] = to_eur(balance,now)
     return balance
 
