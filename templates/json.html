@@ -224,6 +224,21 @@ function closemodal(){
     </table>
   </div>
 
+  <!-- Pagination Controls -->
+  <nav aria-label="Transaction pagination">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+        <a class="page-link" href="?secret={{secret}}&page={{page-1}}" tabindex="-1" aria-disabled="true">Previous</a>
+      </li>
+      <li class="page-item disabled">
+        <span class="page-link">Page {{ page }}</span>
+      </li>
+      <li class="page-item">
+        <a class="page-link" href="?secret={{secret}}&page={{page+1}}">Next</a>
+      </li>
+    </ul>
+  </nav>
+
 </div>
 
 <!-- OFFCANVAS WITH SEARCH FUNCTIONALITY -->

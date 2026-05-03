@@ -21,7 +21,7 @@ dbname = 'trans_app'
 
 ## Application Parameters
 #os.environ['PGPASSFILE'] = '/'+user+'/.pgpass'
-nb_records = 15
+nb_records = 50
 
 
 ## Create Connection
@@ -32,11 +32,13 @@ engine = create_engine(connection_string)
 conn = engine.connect()
 
 # TRANSACTIONAL PAGE
-def gettop10(pars):
+def gettop10(pars, limit=None, offset=0):
+    if limit is None:
+        limit = nb_records
     cnxn = psycopg2.connect(dbname=dbname, host=host, port=port)
     cursor = cnxn.cursor()
     if pars == None:
-        cursor.execute("SELECT * FROM transacciones Order By Fecha Desc, Input Desc limit {}".format(nb_records))
+        cursor.execute("SELECT * FROM transacciones Order By Fecha Desc, Input Desc limit {} offset {}".format(limit, offset))
     else:
         query = "SELECT * FROM Transacciones WHERE "
         query = query + (("Cuenta = '"+ pars[0] + "' and ") if pars[0] != None else '')
@@ -49,7 +51,7 @@ def gettop10(pars):
         query = query + (("Memo = '"+ pars[7] + "' and ") if pars[7] != None else '')
         query = query + (("Description like '%"+ pars[8] + "%' and ") if pars[8] != None else '')
         query = query[:-4] + ' Order By Fecha Desc, Input Desc '
-        query = query + 'limit {}'.format(nb_records)
+        query = query + 'limit {} offset {}'.format(limit, offset)
         #print(query)
         cursor.execute(query)
     columns = [column[0] for column in cursor.description]
@@ -223,7 +225,18 @@ def index():
             search = None
         #elif request.form['Operación'] == 'Go to Reports':
         #    return redirect(url_for('report'))
-    return render_template('json.html',now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'),cuentas=getacts(),categs=getcategs(),payees=getpayees(),top=gettop10(search), secret=secret)
+    # Handle pagination parameters
+    try:
+        page = int(request.args.get('page', 1))
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1
+    
+    limit = nb_records  # 50 records per page
+    offset = (page - 1) * limit
+    
+    return render_template('json.html', now=dt.datetime.now().strftime('%Y-%m-%dT%H:%M'), cuentas=getacts(), categs=getcategs(), payees=getpayees(), top=gettop10(search, limit=limit, offset=offset), secret=secret, page=page, limit=limit)
 
 ## REPORTING PAGE
 
