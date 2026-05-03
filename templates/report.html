@@ -126,6 +126,20 @@
 
   <div class="container-lg">
     <div class = "row">
+        <div id="interactive-plot">
+          {{ bal_img|safe }}
+        </div>
+    </div>
+    <div class = "row">
+        <div id="interactive-plot">
+          {{ cat_img|safe }}
+        </div>
+    </div>
+  </div>
+
+
+  <div class="container-lg">
+    <div class = "row">
     <div class="col">
       <div class = "table-responsive-lg">
       <table class="table table-striped table-hover" id="balance">
@@ -150,14 +164,6 @@
       </div>
     </div>
     <div class="col">
-      <img src="{{ bal_img }}"/>
-    </div>
-    </div>
-  </div>
-  <!-- TABLE RESULTING BALANCE -->
-  <div class="container-lg">
-    <div class ="row">
-    <div class="col">
       <div class = "table-responsive-lg">
       <table class="table table-striped table-hover" id="balance">
         <thead class="table-dark">
@@ -178,11 +184,9 @@
       </table>
       </div>
     </div>
-    <div class="col">
-      <img src="{{ cat_img }}"/>
     </div>
-
-    </div>
+  </div>
+  <!-- TABLE RESULTING BALANCE -->
 
 </div>
 </body>

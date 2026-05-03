@@ -277,64 +277,87 @@ def balance(pars):
     balance["balance_eur"] = to_eur(balance,now)
     return balance
 
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.figure import Figure
-from io import BytesIO
-import base64
 def balance_plot(pars):
+    import plotly.graph_objects as go
+    import pandas as pd
+    import datetime as dt
+    import plotly.io as pio
+    
     end = dt.datetime.today()
     end = end if (pars == None or pars[0:9] == [None]*9) else (end if pars[5] == None else pd.to_datetime(pars[5].replace("T"," ")))
     start = end - pd.offsets.DateOffset(years=5)
     start = start if (pars == None or pars[0:9] == [None]*9) else (start if pars[4] == None else pd.to_datetime(pars[4].replace("T"," ")))
-    m_list = pd.period_range(start,end,freq='M').to_timestamp()
-
+    m_list = pd.period_range(start, end, freq='M').to_timestamp()
+    
     par = pars.copy()
     par[4] = None
     par[5] = m_list[0].strftime("%Y-%m-%d %H:%M")
-        
+    
     bal_matrix = balance(par)[['Tipo Cuenta','balance_eur']].groupby('Tipo Cuenta', as_index=False).agg({'balance_eur':'sum'})
     bal_matrix = bal_matrix.rename(columns={'balance_eur':m_list[0]})
-
+    
     for m in m_list[1:]:
         par[5] = m.strftime("%Y-%m-%d %H:%M")
         bal = balance(par)[['Tipo Cuenta','balance_eur']].groupby('Tipo Cuenta', as_index=False).agg({'balance_eur':'sum'})
         bal_matrix = pd.merge(bal_matrix, bal, how='outer', on='Tipo Cuenta')
         bal_matrix = bal_matrix.rename(columns={'balance_eur':m.strftime("%Y-%m")})
+    
     bal_matrix = pd.concat([bal_matrix["Tipo Cuenta"], bal_matrix.drop("Tipo Cuenta", axis=1)], axis=1)
-
-    fig = Figure()
-    axis = fig.add_subplot(1,1,1)
-    axis.set_title("Balance Histórico")
-    axis.set_xlabel("Mes")
-    axis.set_ylabel("Balance € (000's)")
-    axis.grid()
-
-    if bal_matrix.shape[0]>1: axis.plot(bal_matrix.iloc[:,1:].sum(axis=0), label='Total')
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    
+    # Add total line if there's more than one account type
+    if bal_matrix.shape[0] > 1:
+        fig.add_trace(go.Scatter(
+            x=bal_matrix.columns[1:],
+            y=bal_matrix.iloc[:, 1:].sum(axis=0)/1000,
+            customdata=bal_matrix.iloc[:, 1:].sum(axis=0),
+            mode='lines',
+            name='Total',
+            hovertemplate=f'<b>Bal. Total</b>' +
+                        ': €%{customdata:,.2f}<extra></extra>'
+        ))
+    
+    # Add individual account type lines
     for i in range(bal_matrix.shape[0]):
-        axis.plot(bal_matrix.iloc[i,1:], label=bal_matrix.iloc[i,0])
-
-
-    # getting and setting the array of values of y-axis
-    ticks = axis.get_yticks()
-    new_labels = [f'€{int(amt/1000):,}' for amt in ticks]
-    axis.set_yticks(ticks)
-    axis.set_yticklabels(new_labels)
-    axis.set_xticks(axis.get_xticks())
-    axis.set_xticklabels([(pd.to_datetime(0)+dt.timedelta(el)).strftime("%m-%y") for el in axis.get_xticks()], rotation = 45)
-    axis.margins(x=0.02)
-
-    # Shrink current axis by 20%
-    box = axis.get_position()
-    axis.set_position([box.x0, box.y0 + box.height * 0.2,
-                 box.width, box.height * 0.8])
-    axis.legend(loc='upper center', bbox_to_anchor=(0.5, -0.22), ncol=5, fontsize="8")
-
-    pngImage = BytesIO()
-    FigureCanvas(fig).print_png(pngImage)
-
-    pngImageString = "data:image/png;base64,"
-    pngImageString += base64.b64encode(pngImage.getvalue()).decode('utf8')
-    return pngImageString
+        fig.add_trace(go.Scatter(
+            x=bal_matrix.columns[1:],
+            y=bal_matrix.iloc[i, 1:]/1000,
+            customdata=bal_matrix.iloc[i, 1:], 
+            mode='lines',
+            name=bal_matrix.iloc[i, 0],
+            hovertemplate=f'<b>{bal_matrix.iloc[i, 0]}</b>' +
+                ': €%{customdata:,.2f}<extra></extra>'
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title="Balance Histórico",
+        xaxis=dict(
+            title="Mes",
+            tickangle=45
+        ),
+        yaxis=dict(
+            title="Balance € (000's)",
+            tickformat="€,.0f",
+            ticksuffix="k",
+            gridcolor='lightgray'
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            x=1,
+            xanchor="right",
+            font=dict(size=14)
+        )
+    )
+    
+    # Convert to HTML for Flask
+    plot_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    
+    return plot_html
 
 def rep_categ(pars,type:int=0):
     if pars == None or pars[0:9] == [None]*9:
@@ -364,80 +387,150 @@ def rep_categ(pars,type:int=0):
     return categoria
 
 def categ_plot(pars):
+    import plotly.graph_objects as go
+    import pandas as pd
+    import datetime as dt
+    import numpy as np
+    import plotly.io as pio
+    
     end = dt.datetime.today()
     end = end if (pars == None or pars[0:9] == [None]*9) else (end if pars[5] == None else pd.to_datetime(pars[5].replace("T"," ")))
     start = end - pd.offsets.DateOffset(years=5)
     start = start if (pars == None or pars[0:9] == [None]*9) else (start if pars[4] == None else pd.to_datetime(pars[4].replace("T"," ")))
-    m_list = pd.period_range(start,end,freq='M').to_timestamp()
-
-    par = pars.copy()
-    par[4] = m_list[0].strftime("%Y-%m-%d %H:%M")
-    par[5] = m_list[1].strftime("%Y-%m-%d %H:%M")
-        
-    gasto_matrix = rep_categ(par,-1)[['Tipo Categoría','monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur':'sum'})
-    gasto_matrix = gasto_matrix.rename(columns={'monto_eur':m_list[0]})
-
-    for i in range(1,len(m_list)-1):
-        par[4] = m_list[i].strftime("%Y-%m-%d %H:%M")
-        par[5] = m_list[i+1].strftime("%Y-%m-%d %H:%M")
-        gasto = rep_categ(par,-1)[['Tipo Categoría','monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur':'sum'})
-        gasto_matrix = pd.merge(gasto_matrix, gasto, how='outer', on='Tipo Categoría')
-        gasto_matrix = gasto_matrix.rename(columns={'monto_eur':m_list[i].strftime("%Y-%m")})
-    gasto_matrix = pd.concat([gasto_matrix["Tipo Categoría"], gasto_matrix.drop("Tipo Categoría", axis=1)], axis=1)
-
+    m_list = pd.period_range(start, end, freq='M').to_timestamp()
     
+    # Process expense data
     par = pars.copy()
     par[4] = m_list[0].strftime("%Y-%m-%d %H:%M")
     par[5] = m_list[1].strftime("%Y-%m-%d %H:%M")
-
-    ingreso_matrix = rep_categ(par,1)[['Tipo Categoría','monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur':'sum'})
-    ingreso_matrix = ingreso_matrix.rename(columns={'monto_eur':m_list[0]})
-
-    for i in range(1,len(m_list)-1):
+    
+    gasto_matrix = rep_categ(par, -1)[['Tipo Categoría', 'monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur': 'sum'})
+    gasto_matrix = gasto_matrix.rename(columns={'monto_eur': m_list[0]})
+    
+    for i in range(1, len(m_list)-1):
         par[4] = m_list[i].strftime("%Y-%m-%d %H:%M")
         par[5] = m_list[i+1].strftime("%Y-%m-%d %H:%M")
-        ingreso = rep_categ(par,1)[['Tipo Categoría','monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur':'sum'})
+        gasto = rep_categ(par, -1)[['Tipo Categoría', 'monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur': 'sum'})
+        gasto_matrix = pd.merge(gasto_matrix, gasto, how='outer', on='Tipo Categoría')
+        gasto_matrix = gasto_matrix.rename(columns={'monto_eur': m_list[i].strftime("%Y-%m")})
+    
+    gasto_matrix = pd.concat([gasto_matrix["Tipo Categoría"], gasto_matrix.drop("Tipo Categoría", axis=1)], axis=1)
+    
+    # Process income data
+    par = pars.copy()
+    par[4] = m_list[0].strftime("%Y-%m-%d %H:%M")
+    par[5] = m_list[1].strftime("%Y-%m-%d %H:%M")
+    
+    ingreso_matrix = rep_categ(par, 1)[['Tipo Categoría', 'monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur': 'sum'})
+    ingreso_matrix = ingreso_matrix.rename(columns={'monto_eur': m_list[0]})
+    
+    for i in range(1, len(m_list)-1):
+        par[4] = m_list[i].strftime("%Y-%m-%d %H:%M")
+        par[5] = m_list[i+1].strftime("%Y-%m-%d %H:%M")
+        ingreso = rep_categ(par, 1)[['Tipo Categoría', 'monto_eur']].groupby('Tipo Categoría', as_index=False).agg({'monto_eur': 'sum'})
         ingreso_matrix = pd.merge(ingreso_matrix, ingreso, how='outer', on='Tipo Categoría')
-        ingreso_matrix = ingreso_matrix.rename(columns={'monto_eur':m_list[i].strftime("%Y-%m")})
+        ingreso_matrix = ingreso_matrix.rename(columns={'monto_eur': m_list[i].strftime("%Y-%m")})
+    
     ingreso_matrix = pd.concat([ingreso_matrix["Tipo Categoría"], ingreso_matrix.drop("Tipo Categoría", axis=1)], axis=1)
-
-    fig = Figure()
-    axis = fig.add_subplot(1,1,1)
-    axis.set_title("Monto Histórico")
-    axis.set_xlabel("Mes")
-    axis.set_ylabel("Monto € (000's)")
-    axis.grid()
-
-    if ingreso_matrix.shape[0]>0:
-        axis.bar(x=ingreso_matrix.columns[1:], height=ingreso_matrix.iloc[:,1:].sum(), label="Ingreso Total", width=20, color=(0.2,0.4,0.6))
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    
+    # Add income bars if available
+    if ingreso_matrix.shape[0] > 0:
+        ingreso_total = ingreso_matrix.iloc[:, 1:].sum()
+        fig.add_trace(go.Bar(
+            x=gasto_matrix.columns[1:],
+            y=ingreso_total/1000,
+            customdata=ingreso_total,
+            name="Ingreso Total",
+            marker_color='rgba(51, 102, 153, 0.8)',
+            #width=0.7,  # Adjust bar width
+            hoverinfo='skip'
+        ))
+    
+    # Add expense bars if available
+    if gasto_matrix.shape[0] > 0:
+       
+        # Generate colors for expense categories
+        num_categories = gasto_matrix.shape[0]
+        colors = [f'rgba({int(255*r)}, {int(255*0.3)}, {int(255*0.3)}, 0.8)' 
+                 for r in np.linspace(0.5, 1.0, num_categories)]
         
-    if gasto_matrix.shape[0]>0:
-        acum = ingreso_matrix.iloc[:,1:].sum()
-        cbar = [(el,.3,.3) for el in np.linspace(0.5,1.0,gasto_matrix.shape[0])]
+        # Add each expense category as a stacked bar
         for i in range(gasto_matrix.shape[0]):
-            axis.bar(x=gasto_matrix.columns[1:], height=gasto_matrix.iloc[i,1:], label=gasto_matrix.iloc[i,0], bottom=acum, width=12, color=cbar[i])
-            acum += + gasto_matrix.iloc[i,1:]
+            category = gasto_matrix.iloc[i, 0]
+            values = gasto_matrix.iloc[i, 1:]
+            
+            fig.add_trace(go.Bar(
+                x=gasto_matrix.columns[1:],
+                y=values/1000,
+                customdata = values,
+                name=category,
+                marker_color=colors[i],
+                width=1e9,  # Slightly narrower than income bars
+                #base=base,  # Stack on top of previous bars
+                hovertemplate=f'<b>{category}</b>' +
+                              ': €%{customdata:,.2f}<extra></extra>'
+            ))
 
-    # getting and setting the array of values of y-axis
-    ticks = axis.get_yticks()
-    new_labels = [f'€{int(amt/1000):,}' for amt in ticks]
-    axis.set_yticks(ticks)
-    axis.set_yticklabels(new_labels)
-    axis.set_xticks(axis.get_xticks())
-    axis.set_xticklabels([(pd.to_datetime(0)+dt.timedelta(el)).strftime("%m-%y") for el in axis.get_xticks()], rotation = 45)
-    axis.margins(x=0.02)
+    # Add Net Income Result
+    if ingreso_matrix.shape[0] > 0 and gasto_matrix.shape[0] > 0:
+        ingreso_neto = ingreso_matrix.iloc[:, 1:].sum() + gasto_matrix.iloc[:, 1:].sum()
+        fig.add_trace(go.Bar(
+            x=gasto_matrix.columns[1:],
+            y=ingreso_neto*0,
+            customdata = ingreso_neto,
+            name="Ingreso Total",
+            marker_color='rgba(51, 153, 102, 0.8)',
+            #width=0.7,  # Adjust bar width
+            hovertemplate='<b>Ingreso Neto</b>' +
+                          ': €%{customdata:,.2f}<extra></extra>'    # Add income bars if available
+        ))
 
-    box = axis.get_position()
-    axis.set_position([box.x0, box.y0 + box.height * 0.2,
-                 box.width, box.height * 0.8])
-    axis.legend(loc='upper center', bbox_to_anchor=(0.5, -0.22), ncol=5, fontsize="7")
+    # Add Total Income
+    if ingreso_matrix.shape[0] > 0:
+        ingreso_total = ingreso_matrix.iloc[:, 1:].sum()
+        fig.add_trace(go.Bar(
+            x=gasto_matrix.columns[1:],
+            y=ingreso_total*0,
+            customdata = ingreso_total,
+            name="Ingreso Total",
+            marker_color='rgba(51, 102, 153, 0.8)',
+            #width=0.7,  # Adjust bar width
+            hovertemplate='<b>Ingreso Total</b>' +
+                          ': €%{customdata:,.2f}<extra></extra>'    # Add income bars if available
+        ))
 
-    pngImage = BytesIO()
-    FigureCanvas(fig).print_png(pngImage)
-
-    pngImageString = "data:image/png;base64,"
-    pngImageString += base64.b64encode(pngImage.getvalue()).decode('utf8')
-    return pngImageString
+    # Update layout
+    fig.update_layout(
+        title="Monto Histórico",
+        xaxis=dict(
+            title="Mes",
+            tickangle=45
+        ),
+        yaxis=dict(
+            title="Monto € (000's)",
+            tickformat="€,.0f",
+            ticksuffix="k",
+            gridcolor='lightgray'
+        ),
+        barmode='stack',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            x=1,
+            xanchor="right",
+            font=dict(size=14)
+        ),
+        hovermode="x unified"
+    )
+    
+    # Convert to HTML
+    plot_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    
+    return plot_html
 
 @app.route("/report", methods=["GET","POST"])
 def report():
