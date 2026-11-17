@@ -1,2 +1,8 @@
 /__pycache__
 secret.txt
+*.sock
+*.xlsx
+*.xml
+*.ipynb
+.venv/
+*.parquet
