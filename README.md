@@ -39,7 +39,7 @@ The application expects a PostgreSQL database named `trans_app` with the followi
 
 ### Stored procedures
 
-All writes go through four `PROCEDURE`s in the `public` schema. The application invokes
+All writes go through five `PROCEDURE`s in the `public` schema. The application invokes
 them positionally (`CALL webtransaction(%s, ...)` through psycopg2), so the parameter
 order, count, and types below are a hard contract: changing them in the database requires
 updating `app.py` at the same time.
@@ -53,6 +53,7 @@ unbounded blank-padded string (`bpchar`), not a one-character value.
 | `webtransaction` | `in_cuenta character, in_description character, in_categoria character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_now timestamp without time zone` | “Transacción” submit on `/` |
 | `webtransfer` | `in_cuenta character, in_transfer character, in_description character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_recibido numeric, in_memo character, in_now timestamp without time zone` | “Transferencia” submit on `/` |
 | `webmodification` | `in_id integer, in_cuenta character, in_transfer character, in_payee character, in_categoria character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_description character, in_now timestamp without time zone` | “Modificación” submit in the edit modal on `/` |
+| `webduplication` | `in_id integer, in_now timestamp without time zone` | “Duplicar” submit in the edit modal on `/` |
 | `webdeletion` | `in_id integer` | “Eliminar” submit in the edit modal on `/` |
 
 #### Parameter sources
@@ -117,6 +118,21 @@ unchanged and appends the server time. Submitting an empty transfer field sends 
 an empty `in_transfer` at position 3. The current modal always submits 10 values, so the
 10-parameter path is the one in use.
 
+##### `webduplication` – 2 parameters
+
+Called by `duplicate_transaction()` (`app.py`) with the hidden `ID` value and the server
+time. The copy receives `Fecha` and `Input` = `in_now` and `Tags = 'web_dup'`, so it
+appears first in the list (`ORDER BY Fecha DESC, Input DESC`) and can then be adjusted
+with “Modificación”.
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_id` | `integer` | Hidden `ID` field, filled by `selectrow()` |
+| 2 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
+
+Only the selected row is copied: duplicating one leg of a transfer does not create the
+mirror entry.
+
 ##### `webdeletion` – 1 parameter
 
 Called by `delete_transaction()` (`app.py`) with the hidden `ID` value:
@@ -129,10 +145,10 @@ Called by `delete_transaction()` (`app.py`) with the hidden `ID` value:
 
 The bodies are application-specific and already exist in `trans_app`; dump the live
 definitions with psql (`\sf webtransaction`, `\sf webtransfer`, `\sf webmodification`,
-`\sf webdeletion`). The `CREATE OR REPLACE` skeletons below use the exact deployed
-signatures. These are signature placeholders: they compile, but their bodies do nothing
-until you restore the real logic. Do not change the argument types either, or PostgreSQL
-will create an overload instead of replacing the existing procedure.
+`\sf webduplication`, `\sf webdeletion`). The `CREATE OR REPLACE` skeletons below use the
+exact deployed signatures. These are signature placeholders: they compile, but their
+bodies do nothing until you restore the real logic. Do not change the argument types
+either, or PostgreSQL will create an overload instead of replacing the existing procedure.
 
 ```sql
 CREATE OR REPLACE PROCEDURE public.webtransaction(
@@ -171,6 +187,11 @@ CREATE OR REPLACE PROCEDURE public.webmodification(
     IN in_now         timestamp without time zone
 ) LANGUAGE plpgsql AS $$ BEGIN END; $$;
 
+CREATE OR REPLACE PROCEDURE public.webduplication(
+    IN in_id  integer,
+    IN in_now timestamp without time zone
+) LANGUAGE plpgsql AS $$ BEGIN END; $$;
+
 CREATE OR REPLACE PROCEDURE public.webdeletion(
     IN in_id integer
 ) LANGUAGE plpgsql AS $$ BEGIN END; $$;
@@ -189,6 +210,8 @@ CREATE OR REPLACE PROCEDURE public.webdeletion(
   with `datetime.strptime(..., "%Y-%m-%dT%H:%M")` and the DB columns are
   `timestamp without time zone`.
 - `in_now` is always appended by the server; it is never a form field.
+- `webduplication` copies the selected row and stamps `Fecha`, `Input`, and `Tags`
+  (`web_dup`) from the server; the new `id` comes from the identity column.
 - The procedure parameters are unbounded, but the underlying `transacciones` columns are
   limited: `cuenta`, `transfer`, `categoría`, `memo` are `varchar(30)`, `payee` is
   `varchar(40)`, and `description` is `varchar(255)`.

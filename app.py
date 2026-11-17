@@ -354,6 +354,19 @@ def delete_transaction(pars):
     return "nothing"
 
 
+def duplicate_transaction(pars):
+    try:
+        cnxn = _get_psycopg2_connection()
+        cursor = cnxn.cursor()
+        cursor.execute("CALL webduplication(%s, %s)", pars)
+        cnxn.commit()
+        cursor.close()
+        cnxn.close()
+    except Exception as e:
+        print("Error: %s" % e)
+    return "nothing"
+
+
 # ---------------------------------------------------------------------------
 # Report functions
 # ---------------------------------------------------------------------------
@@ -792,6 +805,11 @@ def index():
             out = list(trans_pars.values())
             pars = [out[0]]
             delete_transaction(pars)
+        elif request.form["Operación"] == "Duplicar":
+            trans_pars = dict(request.form)
+            out = list(trans_pars.values())
+            pars = [out[0], dt.datetime.now()]
+            duplicate_transaction(pars)
         elif request.form["Operación"] == "Buscar":
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
