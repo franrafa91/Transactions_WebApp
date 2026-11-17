@@ -37,11 +37,163 @@ The application expects a PostgreSQL database named `trans_app` with the followi
 - **`cuentas`** – Account definitions with currency and type
 - **`Categories`** – Category definitions
 
-Stored procedures required:
-- `webtransaction` – Create a new transaction
-- `webtransfer` – Create a transfer between accounts
-- `webmodification` – Modify an existing transaction
-- `webdeletion` – Delete a transaction
+### Stored procedures
+
+All writes go through four `PROCEDURE`s in the `public` schema. The application invokes
+them positionally (`CALL webtransaction(%s, ...)` through psycopg2), so the parameter
+order, count, and types below are a hard contract: changing them in the database requires
+updating `app.py` at the same time.
+
+Signatures as deployed in `trans_app` (from `information_schema.parameters`). PostgreSQL
+discards type modifiers on procedure parameters, so `character` without a length is an
+unbounded blank-padded string (`bpchar`), not a one-character value.
+
+| Procedure | Parameters (in order) | Called by |
+|---|---|---|
+| `webtransaction` | `in_cuenta character, in_description character, in_categoria character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_now timestamp without time zone` | “Transacción” submit on `/` |
+| `webtransfer` | `in_cuenta character, in_transfer character, in_description character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_recibido numeric, in_memo character, in_now timestamp without time zone` | “Transferencia” submit on `/` |
+| `webmodification` | `in_id integer, in_cuenta character, in_transfer character, in_payee character, in_categoria character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_description character, in_now timestamp without time zone` | “Modificación” submit in the edit modal on `/` |
+| `webdeletion` | `in_id integer` | “Eliminar” submit in the edit modal on `/` |
+
+#### Parameter sources
+
+The routes read submitted fields with `dict(request.form).values()`, so the order of the
+fields inside each `<form>` in `templates/json.html` is significant.
+
+##### `webtransaction` – 8 parameters
+
+Called by `new_transaction()` (`app.py`), which takes the form values
+`[Cuenta, Payee, Categoria, Fecha, Monto, Memo, Descripcion]`, appends the server time,
+and reorders them as `[0, 6, 2, 1, 3, 4, 5, 7]`.
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_cuenta` | `character` | `Cuenta` select |
+| 2 | `in_description` | `character` | `Descripcion` input |
+| 3 | `in_categoria` | `character` | `Categoria` input (must exist in `categories.categoría`) |
+| 4 | `in_payee` | `character` | `Payee` input |
+| 5 | `in_fecha` | `timestamp` | `Fecha` input, parsed with `%Y-%m-%dT%H:%M` |
+| 6 | `in_monto` | `numeric` | `Monto` input (signed; negative = expense) |
+| 7 | `in_memo` | `character` | `Memo` input |
+| 8 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
+
+##### `webtransfer` – 9 parameters
+
+Called by `new_transfer()` (`app.py`), which takes
+`[Cuenta, Payee, Fecha, Monto, Memo, Descripcion, Transferencia, MontoRec]`, appends the
+server time, and reorders them as `[0, 6, 5, 1, 2, 3, 7, 4, 8]`.
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_cuenta` | `character` | `Cuenta` select (source account) |
+| 2 | `in_transfer` | `character` | `Transferencia` select (destination account) |
+| 3 | `in_description` | `character` | `Descripcion` input |
+| 4 | `in_payee` | `character` | `Payee` input |
+| 5 | `in_fecha` | `timestamp` | `Fecha` input (`%Y-%m-%dT%H:%M`) |
+| 6 | `in_monto` | `numeric` | `Monto` input (amount debited from the source) |
+| 7 | `in_recibido` | `numeric` | `MontoRec` input (amount credited to the destination) |
+| 8 | `in_memo` | `character` | `Memo` input |
+| 9 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
+
+##### `webmodification` – 10 parameters
+
+Called by `modify_transaction()` (`app.py`), which passes the submitted values through
+unchanged and appends the server time. Submitting an empty transfer field sends `NULL`.
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_id` | `integer` | Hidden `ID` field, filled by `selectrow()` |
+| 2 | `in_cuenta` | `character` | `Cuenta` select |
+| 3 | `in_transfer` | `character` | `Transfer` select (may be `NULL`) |
+| 4 | `in_payee` | `character` | `Payee` input |
+| 5 | `in_categoria` | `character` | `Categoria` input |
+| 6 | `in_fecha` | `timestamp` | `Fecha` input (`%Y-%m-%dT%H:%M`) |
+| 7 | `in_monto` | `numeric` | `Monto` input |
+| 8 | `in_memo` | `character` | `Memo` input |
+| 9 | `in_description` | `character` | `Descripcion` input |
+| 10 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
+
+`webmodification` also accepts a 9-value form submission, in which case the route inserts
+an empty `in_transfer` at position 3. The current modal always submits 10 values, so the
+10-parameter path is the one in use.
+
+##### `webdeletion` – 1 parameter
+
+Called by `delete_transaction()` (`app.py`) with the hidden `ID` value:
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_id` | `integer` | Hidden `ID` field, filled by `selectrow()` |
+
+#### Recreating the procedures
+
+The bodies are application-specific and already exist in `trans_app`; dump the live
+definitions with psql (`\sf webtransaction`, `\sf webtransfer`, `\sf webmodification`,
+`\sf webdeletion`). The `CREATE OR REPLACE` skeletons below use the exact deployed
+signatures. These are signature placeholders: they compile, but their bodies do nothing
+until you restore the real logic. Do not change the argument types either, or PostgreSQL
+will create an overload instead of replacing the existing procedure.
+
+```sql
+CREATE OR REPLACE PROCEDURE public.webtransaction(
+    IN in_cuenta      character,
+    IN in_description character,
+    IN in_categoria   character,
+    IN in_payee       character,
+    IN in_fecha       timestamp without time zone,
+    IN in_monto       numeric,
+    IN in_memo        character,
+    IN in_now         timestamp without time zone
+) LANGUAGE plpgsql AS $$ BEGIN END; $$;
+
+CREATE OR REPLACE PROCEDURE public.webtransfer(
+    IN in_cuenta      character,
+    IN in_transfer    character,
+    IN in_description character,
+    IN in_payee       character,
+    IN in_fecha       timestamp without time zone,
+    IN in_monto       numeric,
+    IN in_recibido    numeric,
+    IN in_memo        character,
+    IN in_now         timestamp without time zone
+) LANGUAGE plpgsql AS $$ BEGIN END; $$;
+
+CREATE OR REPLACE PROCEDURE public.webmodification(
+    IN in_id          integer,
+    IN in_cuenta      character,
+    IN in_transfer    character,
+    IN in_payee       character,
+    IN in_categoria   character,
+    IN in_fecha       timestamp without time zone,
+    IN in_monto       numeric,
+    IN in_memo        character,
+    IN in_description character,
+    IN in_now         timestamp without time zone
+) LANGUAGE plpgsql AS $$ BEGIN END; $$;
+
+CREATE OR REPLACE PROCEDURE public.webdeletion(
+    IN in_id integer
+) LANGUAGE plpgsql AS $$ BEGIN END; $$;
+```
+
+#### Notes
+
+- Each form must keep its current field order, because the route maps values by position:
+  - `/` transaction/transfer form: `Cuenta, Payee, Categoria, Fecha, Monto, Memo, Descripcion, Transferencia, MontoRec, Operación`.
+  - Edit modal: `ID, Cuenta, Transfer, Payee, Categoria, Fecha, Monto, Memo, Descripcion, Operación`.
+- Blank text inputs are converted to `NULL` before the call.
+- `Monto` and `MontoRec` arrive as strings and are cast to `numeric` by PostgreSQL. The
+  target column `transacciones.monto` is `double precision`, so the procedure body relies
+  on the implicit `numeric` to `double precision` cast.
+- `Fecha` must arrive as `YYYY-MM-DDTHH:MM` (HTML `datetime-local`); the route parses it
+  with `datetime.strptime(..., "%Y-%m-%dT%H:%M")` and the DB columns are
+  `timestamp without time zone`.
+- `in_now` is always appended by the server; it is never a form field.
+- The procedure parameters are unbounded, but the underlying `transacciones` columns are
+  limited: `cuenta`, `transfer`, `categoría`, `memo` are `varchar(30)`, `payee` is
+  `varchar(40)`, and `description` is `varchar(255)`.
+- `Operación = Buscar` and `Operación = Clear Search` do not call any procedure; they only
+  update the Flask session filter.
 
 ## Installation
 
