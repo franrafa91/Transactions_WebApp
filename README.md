@@ -39,10 +39,10 @@ The application expects a PostgreSQL database named `trans_app` with the followi
 
 ### Stored procedures
 
-All writes go through five `PROCEDURE`s in the `public` schema. The application invokes
-them positionally (`CALL webtransaction(%s, ...)` through psycopg2), so the parameter
-order, count, and types below are a hard contract: changing them in the database requires
-updating `app.py` at the same time.
+All writes made by the application go through five `PROCEDURE`s in the `public` schema. The
+application invokes them positionally (`CALL webtransaction(%s, ...)` through psycopg2), so
+the parameter order, count, and types below are a hard contract: changing them in the
+database requires updating `app.py` at the same time.
 
 Signatures as deployed in `trans_app` (from `information_schema.parameters`). PostgreSQL
 discards type modifiers on procedure parameters, so `character` without a length is an
@@ -217,6 +217,145 @@ CREATE OR REPLACE PROCEDURE public.webdeletion(
   `varchar(40)`, and `description` is `varchar(255)`.
 - `Operación = Buscar` and `Operación = Clear Search` do not call any procedure; they only
   update the Flask session filter.
+
+### Balance helpers (psql)
+
+These routines are for database maintenance; `app.py` does not call them. They work on one
+account at a time, in that account's own currency.
+
+| Routine | Signature | Purpose |
+|---|---|---|
+| `get_balance` (function) | `in_cuenta character varying, in_fecha timestamp without time zone` → `double precision` | `SUM(monto)` for the account where `fecha < in_fecha` |
+| `set_balance` (procedure) | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision` | Inserts one adjustment row so the balance at `in_fecha` equals `in_balance` |
+
+`get_balance` returns `0` when the account has no earlier transactions and raises `22023`
+(`invalid_parameter_value`) for a `NULL` argument or an account missing from `cuentas`.
+The comparison is strict (`fecha < in_fecha`) and account matching is exact and
+case-sensitive, consistent with the report filter in `app.py`.
+
+`set_balance` computes `delta = in_balance - get_balance(in_cuenta, in_fecha)` and inserts
+one row:
+
+- `fecha = in_fecha - interval '1 millisecond'`
+- `monto = delta`
+- `categoría = 'Sin Categoría'` (excluded from the income/expense breakdowns)
+- `tags = 'balance'`
+- `description = 'Balance adjustment'`, `input = LOCALTIMESTAMP`
+
+The one-millisecond offset is required because the balance uses `< in_fecha` and `fecha` is
+`timestamp(3)`: a row stamped exactly at `in_fecha` would not be counted, and subtracting a
+microsecond rounds back up to `in_fecha`. The adjustment therefore shows one minute earlier
+in the web list (`%d-%m-%y %H:%M`), which is cosmetic.
+
+`set_balance` inserts nothing when `abs(delta) < 0.005` (an already-correct balance or
+floating-point noise) and reports the delta through `RAISE NOTICE`. Repeated calls are
+numerically correct but add a row each time the target changes.
+
+```sql
+SELECT get_balance('KBC', '2026-01-01');
+-- 10516.899999999921
+
+CALL set_balance('KBC', '2026-01-01', 11000);
+-- NOTICE:  set_balance: KBC adjusted by 483.1000000000786 at 2025-12-31 23:59:59.999
+
+SELECT get_balance('KBC', '2026-01-01');
+-- 11000
+
+SELECT id, fecha, monto, tags, description
+FROM transacciones WHERE tags = 'balance' ORDER BY id;
+```
+
+Out-of-order updates: setting a later date first and an earlier date afterwards changes the
+later balance by the earlier delta. For example, after setting October to 30,000 and then
+September to 20,000, October reads `30,000 + (20,000 - September's old balance)`; calling
+`set_balance` for October again with 30,000 inserts the corrective delta and restores it.
+Automating that would require storing each date's target balance, which the schema does
+not do.
+
+Notes:
+
+- Balances are derived (`SUM(monto)`), not stored, so later transactions never need to be
+  edited; an adjustment is automatically included in every later balance.
+- This is a single-entry ledger: a balance adjustment changes that account and total net
+  worth with no counterpart entry.
+- `idx_transacciones_cuenta_fecha` on `(cuenta, fecha)` supports these lookups.
+- `\sf get_balance` and `\sf set_balance` show the deployed definitions.
+
+#### Deployed definitions
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_transacciones_cuenta_fecha
+    ON public.transacciones (cuenta, fecha);
+
+CREATE OR REPLACE FUNCTION public.get_balance(
+    in_cuenta character varying,
+    in_fecha  timestamp without time zone
+) RETURNS double precision
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_balance double precision;
+BEGIN
+    IF in_cuenta IS NULL OR in_fecha IS NULL THEN
+        RAISE EXCEPTION 'get_balance: cuenta and fecha are required'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.cuentas WHERE "Nombre Cuenta" = in_cuenta
+    ) THEN
+        RAISE EXCEPTION 'get_balance: unknown account "%"', in_cuenta
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT COALESCE(SUM(monto), 0)::double precision
+      INTO v_balance
+      FROM public.transacciones
+     WHERE cuenta = in_cuenta
+       AND fecha < in_fecha;
+
+    RETURN v_balance;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE public.set_balance(
+    IN in_cuenta  character varying,
+    IN in_fecha   timestamp without time zone,
+    IN in_balance double precision
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_current double precision;
+    v_delta   double precision;
+    v_stamp   timestamp without time zone;
+BEGIN
+    IF in_cuenta IS NULL OR in_fecha IS NULL OR in_balance IS NULL THEN
+        RAISE EXCEPTION 'set_balance: cuenta, fecha and balance are required'
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_current := public.get_balance(in_cuenta, in_fecha);
+    v_delta := in_balance - v_current;
+
+    IF abs(v_delta) < 0.005 THEN
+        RAISE NOTICE 'set_balance: % already at % on %; nothing inserted',
+            in_cuenta, in_balance, in_fecha;
+        RETURN;
+    END IF;
+
+    v_stamp := in_fecha - interval '1 millisecond';
+
+    INSERT INTO public.transacciones
+        (cuenta, transfer, description, payee, categoría,
+         fecha, monto, memo, tags, input)
+    VALUES
+        (in_cuenta, NULL, 'Balance adjustment', NULL, 'Sin Categoría',
+         v_stamp, v_delta, NULL, 'balance', LOCALTIMESTAMP);
+
+    RAISE NOTICE 'set_balance: % adjusted by % at % (target %)',
+        in_cuenta, v_delta, v_stamp, in_balance;
+END;
+$$;
+```
 
 ## Installation
 
