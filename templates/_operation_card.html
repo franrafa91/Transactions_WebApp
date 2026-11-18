@@ -144,17 +144,54 @@
                      class="form-control" required>
             </div>
           </div>
-          <div class="row align-items-end">
-            <div class="col-md-9">
-              <div class="form-text mb-2">
-                Se registrará un ajuste un instante antes de la fecha indicada, de modo
-                que el balance a esa fecha sea el valor objetivo. El ajuste usa la
-                categoría «Sin Categoría» y la etiqueta «balance».
-              </div>
+          <div class="row">
+            <div class="col-md-4">
+              <label for="Categoria-balance">Categoría:</label>
+              <input type="text" name="Categoria" id="Categoria-balance"
+                     placeholder="Categoría" list="CatList-balance"
+                     class="form-control" maxlength="30" required>
+              <datalist id="CatList-balance">
+                {% for u in categs %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
+              <label for="Payee-balance">Payee:</label>
+              <input type="text" name="Payee" id="Payee-balance"
+                     placeholder="Payee (opcional)" list="payeelist-balance"
+                     class="form-control" maxlength="40">
+              <datalist id="payeelist-balance">
+                {% for u in payees %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-4">
+              <label for="Memo-balance">Memo:</label>
+              <input type="text" name="Memo" id="Memo-balance"
+                     placeholder="Memo (opcional)" class="form-control" maxlength="30">
+            </div>
+          </div>
+          <div class="row align-items-end">
+            <div class="col-md-10">
+              <label for="Descripcion-balance">Descripción:</label>
+              <input type="text" name="Descripcion" id="Descripcion-balance"
+                     value="Balance adjustment" class="form-control" maxlength="255">
+            </div>
+            <div class="col-md-2">
               <div class="d-grid">
                 <button type="submit" class="btn btn-success">Fijar balance</button>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-12">
+              <div class="form-text mb-2">
+                Se registrará un ajuste un instante antes de la fecha indicada, de modo
+                que el balance a esa fecha sea el valor objetivo. La categoría es
+                obligatoria; payee, memo y descripción son opcionales. La etiqueta
+                «balance» se conserva para identificar el ajuste.
               </div>
             </div>
           </div>

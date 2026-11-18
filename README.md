@@ -4,7 +4,7 @@ A Flask-based web application for managing personal or business financial transa
 
 ## Features
 
-- **Transaction Management** – Create, edit, delete transactions, target-balance adjustments, and transfers between accounts
+- **Transaction Management** – Create, edit, delete transactions, target-balance adjustments with category/payee/memo/description, and transfers between accounts
 - **Three Operation Modes** – Enter an expense/income amount, set an account's balance at a date, or register a transfer between accounts
 - **Search & Filter** – Filter by account, payee, category, date range, amount, memo, and description
 - **Paginated Transaction List** – Browse transactions with configurable page size
@@ -54,7 +54,7 @@ unbounded blank-padded string (`bpchar`), not a one-character value.
 |---|---|---|
 | `webtransaction` | `in_cuenta character, in_description character, in_categoria character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_now timestamp without time zone` | “Transacción” submit on `/` |
 | `webtransfer` | `in_cuenta character, in_transfer character, in_description character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_recibido numeric, in_memo character, in_now timestamp without time zone` | “Transferencia” submit on `/` |
-| `set_balance` | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision` | “Balance” submit on `/` |
+| `set_balance` | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision, in_categoria character varying, in_payee character varying DEFAULT NULL, in_memo character varying DEFAULT NULL, in_description character varying DEFAULT 'Balance adjustment'` | “Balance” submit on `/` |
 | `webmodification` | `in_id integer, in_cuenta character, in_transfer character, in_payee character, in_categoria character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_description character, in_now timestamp without time zone` | “Modificación” submit in the edit modal on `/` |
 | `webduplication` | `in_id integer, in_now timestamp without time zone` | “Duplicar” submit in the edit modal on `/` |
 | `webdeletion` | `in_id integer` | “Eliminar” submit in the edit modal on `/` |
@@ -100,17 +100,27 @@ the server time, and reorders them as `[0, 6, 5, 1, 2, 3, 7, 4, 8]`.
 | 8 | `in_memo` | `character` | `Memo` input |
 | 9 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
 
-##### `set_balance` – 3 parameters
+##### `set_balance` – 4 required + 3 optional parameters
 
 Called by the **Balance** pane on `/`. `app.py` reads the fields by name, parses `Fecha`
-with `%Y-%m-%dT%H:%M`, converts `Balance` to `float`, and calls
-`set_balance(cuenta, fecha, objetivo)`. The procedure stamps `Input` itself.
+with `%Y-%m-%dT%H:%M`, converts `Balance` to `float`, requires a non-empty `Categoria`,
+and converts blank optional fields to `None`. It calls
+`set_balance(cuenta, fecha, objetivo, categoria, payee, memo, descripcion)`. The procedure
+stamps `Input` itself.
 
 | # | Parameter | Type | Supplied value |
 |---|---|---|---|
 | 1 | `in_cuenta` | `character varying` | `Cuenta` select |
 | 2 | `in_fecha` | `timestamp` | `Fecha` input (`%Y-%m-%dT%H:%M`) |
 | 3 | `in_balance` | `double precision` | `Balance` input (target balance; may be zero or negative) |
+| 4 | `in_categoria` | `character varying` | `Categoria` input (required; must exist in `categories`) |
+| 5 | `in_payee` | `character varying` | `Payee` input (optional, default `NULL`) |
+| 6 | `in_memo` | `character varying` | `Memo` input (optional, default `NULL`) |
+| 7 | `in_description` | `character varying` | `Descripcion` input (optional, default `'Balance adjustment'`) |
+
+`in_categoria` has no default, so the minimum call is four arguments. The old
+three-argument overload is removed after deployment; `set_balance(cuenta, fecha, balance)`
+no longer resolves.
 
 Before calling `set_balance`, the route calls `get_balance(cuenta, fecha)` to report the
 previous balance and the applied adjustment. The procedure inserts at most one row and
@@ -250,7 +260,7 @@ They work on one account at a time, in that account's own currency.
 | Routine | Signature | Purpose |
 |---|---|---|
 | `get_balance` (function) | `in_cuenta character varying, in_fecha timestamp without time zone` → `double precision` | `SUM(monto)` for the account where `fecha < in_fecha` |
-| `set_balance` (procedure) | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision` | Inserts one adjustment row so the balance at `in_fecha` equals `in_balance` |
+| `set_balance` (procedure) | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision, in_categoria character varying, in_payee character varying DEFAULT NULL, in_memo character varying DEFAULT NULL, in_description character varying DEFAULT 'Balance adjustment'` | Inserts one adjustment row so the balance at `in_fecha` equals `in_balance` |
 
 `get_balance` returns `0` when the account has no earlier transactions and raises `22023`
 (`invalid_parameter_value`) for a `NULL` argument or an account missing from `cuentas`.
@@ -262,9 +272,10 @@ one row:
 
 - `fecha = in_fecha - interval '1 millisecond'`
 - `monto = delta`
-- `categoría = 'Sin Categoría'` (excluded from the income/expense breakdowns)
-- `tags = 'balance'`
-- `description = 'Balance adjustment'`, `input = LOCALTIMESTAMP`
+- `categoría = in_categoria` (required; must exist in `categories`)
+- `payee = in_payee` and `memo = in_memo` (optional)
+- `description = in_description`, defaulting to `'Balance adjustment'`
+- `tags = 'balance'`, `input = LOCALTIMESTAMP`
 
 The one-millisecond offset is required because the balance uses `< in_fecha` and `fecha` is
 `timestamp(3)`: a row stamped exactly at `in_fecha` would not be counted, and subtracting a
@@ -279,13 +290,16 @@ numerically correct but add a row each time the target changes.
 SELECT get_balance('KBC', '2026-01-01');
 -- 10516.899999999921
 
-CALL set_balance('KBC', '2026-01-01', 11000);
--- NOTICE:  set_balance: KBC adjusted by 483.1000000000786 at 2025-12-31 23:59:59.999
+CALL set_balance(
+    'KBC', '2026-01-01', 11000, 'Financiero',
+    'Payee opcional', 'Memo opcional', 'Custom adjustment'
+);
+-- NOTICE:  set_balance: KBC adjusted by 483.1000000000786 at 2025-12-31 23:59:59.999 (target 11000, category Financiero)
 
 SELECT get_balance('KBC', '2026-01-01');
 -- 11000
 
-SELECT id, fecha, monto, tags, description
+SELECT id, fecha, monto, categoría, payee, memo, description, tags
 FROM transacciones WHERE tags = 'balance' ORDER BY id;
 ```
 
@@ -300,6 +314,11 @@ Notes:
 
 - Balances are derived (`SUM(monto)`), not stored, so later transactions never need to be
   edited; an adjustment is automatically included in every later balance.
+- The category is required and must exist in `categories`. Choosing a real category makes
+  the adjustment part of that category's report; `Sin Categoría` remains excluded from the
+  income/expense breakdowns.
+- Existing balance rows are not backfilled; only new adjustments use the category, payee,
+  memo, and description fields.
 - This is a single-entry ledger: a balance adjustment changes that account and total net
   worth with no counterpart entry.
 - `idx_transacciones_cuenta_fecha` on `(cuenta, fecha)` supports these lookups.
@@ -341,10 +360,19 @@ BEGIN
 END;
 $$;
 
+-- If replacing the old 3-argument version:
+-- DROP PROCEDURE IF EXISTS public.set_balance(
+--     character varying, timestamp without time zone, double precision
+-- );
+
 CREATE OR REPLACE PROCEDURE public.set_balance(
-    IN in_cuenta  character varying,
-    IN in_fecha   timestamp without time zone,
-    IN in_balance double precision
+    IN in_cuenta      character varying,
+    IN in_fecha       timestamp without time zone,
+    IN in_balance     double precision,
+    IN in_categoria   character varying,
+    IN in_payee       character varying DEFAULT NULL,
+    IN in_memo        character varying DEFAULT NULL,
+    IN in_description character varying DEFAULT 'Balance adjustment'
 )
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -352,8 +380,16 @@ DECLARE
     v_delta   double precision;
     v_stamp   timestamp without time zone;
 BEGIN
-    IF in_cuenta IS NULL OR in_fecha IS NULL OR in_balance IS NULL THEN
-        RAISE EXCEPTION 'set_balance: cuenta, fecha and balance are required'
+    IF in_cuenta IS NULL OR in_fecha IS NULL OR in_balance IS NULL
+       OR in_categoria IS NULL OR btrim(in_categoria) = '' THEN
+        RAISE EXCEPTION 'set_balance: cuenta, fecha, balance and categoria are required'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.categories WHERE categoría = in_categoria
+    ) THEN
+        RAISE EXCEPTION 'set_balance: unknown category "%"', in_categoria
             USING ERRCODE = '22023';
     END IF;
 
@@ -372,11 +408,12 @@ BEGIN
         (cuenta, transfer, description, payee, categoría,
          fecha, monto, memo, tags, input)
     VALUES
-        (in_cuenta, NULL, 'Balance adjustment', NULL, 'Sin Categoría',
-         v_stamp, v_delta, NULL, 'balance', LOCALTIMESTAMP);
+        (in_cuenta, NULL, NULLIF(in_description, ''), NULLIF(in_payee, ''),
+         in_categoria, v_stamp, v_delta, NULLIF(in_memo, ''), 'balance',
+         LOCALTIMESTAMP);
 
-    RAISE NOTICE 'set_balance: % adjusted by % at % (target %)',
-        in_cuenta, v_delta, v_stamp, in_balance;
+    RAISE NOTICE 'set_balance: % adjusted by % at % (target %, category %)',
+        in_cuenta, v_delta, v_stamp, in_balance, in_categoria;
 END;
 $$;
 ```

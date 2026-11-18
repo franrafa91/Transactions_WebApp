@@ -368,7 +368,8 @@ def duplicate_transaction(pars):
     return "nothing"
 
 
-def set_account_balance(cuenta, fecha, objetivo):
+def set_account_balance(cuenta, fecha, objetivo, categoria,
+                        payee=None, memo=None, descripcion=None):
     """Set an account balance at a date and report the applied adjustment."""
     cnxn = _get_psycopg2_connection()
     cursor = cnxn.cursor()
@@ -376,8 +377,8 @@ def set_account_balance(cuenta, fecha, objetivo):
         cursor.execute("SELECT get_balance(%s, %s)", (cuenta, fecha))
         previous = cursor.fetchone()[0]
         cursor.execute(
-            "CALL set_balance(%s, %s, %s)",
-            (cuenta, fecha, objetivo),
+            "CALL set_balance(%s, %s, %s, %s, %s, %s, %s)",
+            (cuenta, fecha, objetivo, categoria, payee, memo, descripcion),
         )
         cnxn.commit()
         delta = objetivo - previous
@@ -832,16 +833,27 @@ def index():
                     request.form["Fecha"], "%Y-%m-%dT%H:%M"
                 )
                 objetivo = float(request.form["Balance"])
+                categoria = (request.form.get("Categoria") or "").strip()
+                payee = request.form.get("Payee") or None
+                memo = request.form.get("Memo") or None
+                descripcion = request.form.get("Descripcion") or None
+                if not categoria:
+                    raise ValueError("category required")
                 if not math.isfinite(objetivo):
                     raise ValueError("balance must be finite")
-                balance_result = set_account_balance(cuenta, fecha, objetivo)
+                balance_result = set_account_balance(
+                    cuenta, fecha, objetivo, categoria, payee, memo, descripcion
+                )
                 if balance_result is None:
                     balance_error = (
-                        "No se pudo fijar el balance. Revisa la cuenta y la fecha."
+                        "No se pudo fijar el balance. "
+                        "Revisa la cuenta, la categoría y la fecha."
                     )
             except (KeyError, ValueError) as e:
                 print("Invalid balance form: %s" % e)
-                balance_error = "El balance objetivo o la fecha no son válidos."
+                balance_error = (
+                    "La categoría, el balance objetivo o la fecha no son válidos."
+                )
         elif operacion == "Transferencia":
             active_tab = "transferencia"
             pars = [
