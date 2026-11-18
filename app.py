@@ -1,5 +1,6 @@
 import datetime as dt
 import io
+import math
 import os
 import sys
 import time
@@ -365,6 +366,37 @@ def duplicate_transaction(pars):
     except Exception as e:
         print("Error: %s" % e)
     return "nothing"
+
+
+def set_account_balance(cuenta, fecha, objetivo):
+    """Set an account balance at a date and report the applied adjustment."""
+    cnxn = _get_psycopg2_connection()
+    cursor = cnxn.cursor()
+    try:
+        cursor.execute("SELECT get_balance(%s, %s)", (cuenta, fecha))
+        previous = cursor.fetchone()[0]
+        cursor.execute(
+            "CALL set_balance(%s, %s, %s)",
+            (cuenta, fecha, objetivo),
+        )
+        cnxn.commit()
+        delta = objetivo - previous
+        return {
+            "cuenta": cuenta,
+            "fecha": fecha,
+            "fecha_label": fecha.strftime("%Y-%m-%d %H:%M"),
+            "previous": previous,
+            "target": objetivo,
+            "delta": delta,
+            "changed": abs(delta) >= 0.005,
+        }
+    except Exception as e:
+        cnxn.rollback()
+        print("Error setting balance: %s" % e)
+        return None
+    finally:
+        cursor.close()
+        cnxn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -766,28 +798,69 @@ def index():
     if "search" not in session:
         session["search"] = None
 
+    active_tab = request.args.get("tab", "transaccion")
+    if active_tab not in ("transaccion", "balance", "transferencia"):
+        active_tab = "transaccion"
+    balance_result = None
+    balance_error = None
+
     if request.method == "POST" and len(request.form) > 0:
-        if request.form["Operación"] == "Transacción":
-            trans_pars = dict(request.form)
-            out = list(trans_pars.values())
-            pars = [out[i] for i in [0, 1, 2, 3, 4, 5, 6]]
-            pars.append(dt.datetime.now())
+        operacion = request.form.get("Operación")
+
+        if operacion == "Transacción":
+            active_tab = "transaccion"
+            pars = [
+                request.form.get("Cuenta"),
+                request.form.get("Payee"),
+                request.form.get("Categoria"),
+                request.form.get("Fecha"),
+                request.form.get("Monto"),
+                request.form.get("Memo"),
+                request.form.get("Descripcion"),
+                dt.datetime.now(),
+            ]
             pars[3] = dt.datetime.strptime(pars[3], "%Y-%m-%dT%H:%M")
             for i in range(0, len(pars)):
                 if pars[i] == "":
                     pars[i] = None
             new_transaction(pars)
-        elif request.form["Operación"] == "Transferencia":
-            trans_pars = dict(request.form)
-            out = list(trans_pars.values())
-            pars = [out[i] for i in [0, 1, 3, 4, 5, 6, 7, 8]]
-            pars.append(dt.datetime.now())
+        elif operacion == "Balance":
+            active_tab = "balance"
+            try:
+                cuenta = request.form["Cuenta"]
+                fecha = dt.datetime.strptime(
+                    request.form["Fecha"], "%Y-%m-%dT%H:%M"
+                )
+                objetivo = float(request.form["Balance"])
+                if not math.isfinite(objetivo):
+                    raise ValueError("balance must be finite")
+                balance_result = set_account_balance(cuenta, fecha, objetivo)
+                if balance_result is None:
+                    balance_error = (
+                        "No se pudo fijar el balance. Revisa la cuenta y la fecha."
+                    )
+            except (KeyError, ValueError) as e:
+                print("Invalid balance form: %s" % e)
+                balance_error = "El balance objetivo o la fecha no son válidos."
+        elif operacion == "Transferencia":
+            active_tab = "transferencia"
+            pars = [
+                request.form.get("Cuenta"),
+                request.form.get("Payee"),
+                request.form.get("Fecha"),
+                request.form.get("Monto"),
+                request.form.get("Memo"),
+                request.form.get("Descripcion"),
+                request.form.get("Transferencia"),
+                request.form.get("MontoRec"),
+                dt.datetime.now(),
+            ]
             pars[2] = dt.datetime.strptime(pars[2], "%Y-%m-%dT%H:%M")
             for i in range(0, len(pars)):
                 if pars[i] == "":
                     pars[i] = None
             new_transfer(pars)
-        elif request.form["Operación"] == "Modificación":
+        elif operacion == "Modificación":
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
             if len(out) == 9:
@@ -800,17 +873,17 @@ def index():
             pars[5] = dt.datetime.strptime(pars[5], "%Y-%m-%dT%H:%M")
             pars.append(dt.datetime.now())
             modify_transaction(pars)
-        elif request.form["Operación"] == "Eliminar":
+        elif operacion == "Eliminar":
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
             pars = [out[0]]
             delete_transaction(pars)
-        elif request.form["Operación"] == "Duplicar":
+        elif operacion == "Duplicar":
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
             pars = [out[0], dt.datetime.now()]
             duplicate_transaction(pars)
-        elif request.form["Operación"] == "Buscar":
+        elif operacion == "Buscar":
             trans_pars = dict(request.form)
             out = list(trans_pars.values())
             out[6] = float(out[6])
@@ -818,7 +891,7 @@ def index():
             if float(out[6]) == -0 or float(out[6]) == 0:
                 out[6] = None
             session["search"] = out
-        elif request.form["Operación"] == "Clear Search":
+        elif operacion == "Clear Search":
             session["search"] = None
 
     # Handle pagination parameters
@@ -843,6 +916,9 @@ def index():
         secret=secret,
         page=page,
         limit=limit,
+        active_tab=active_tab,
+        balance_result=balance_result,
+        balance_error=balance_error,
     )
 
 

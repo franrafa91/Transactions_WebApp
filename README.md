@@ -4,7 +4,8 @@ A Flask-based web application for managing personal or business financial transa
 
 ## Features
 
-- **Transaction Management** – Create, edit, delete transactions and transfers between accounts
+- **Transaction Management** – Create, edit, delete transactions, target-balance adjustments, and transfers between accounts
+- **Three Operation Modes** – Enter an expense/income amount, set an account's balance at a date, or register a transfer between accounts
 - **Search & Filter** – Filter by account, payee, category, date range, amount, memo, and description
 - **Paginated Transaction List** – Browse transactions with configurable page size
 - **Reports Dashboard** – Account balances with EUR conversion, category expense breakdowns
@@ -39,10 +40,11 @@ The application expects a PostgreSQL database named `trans_app` with the followi
 
 ### Stored procedures
 
-All writes made by the application go through five `PROCEDURE`s in the `public` schema. The
-application invokes them positionally (`CALL webtransaction(%s, ...)` through psycopg2), so
-the parameter order, count, and types below are a hard contract: changing them in the
-database requires updating `app.py` at the same time.
+All writes made by the application go through six `PROCEDURE`s in the `public` schema: the
+five `web*` procedures below and `set_balance`. The application invokes them positionally
+(`CALL webtransaction(%s, ...)` through psycopg2), so the parameter order, count, and types
+below are a hard contract: changing them in the database requires updating `app.py` at the
+same time.
 
 Signatures as deployed in `trans_app` (from `information_schema.parameters`). PostgreSQL
 discards type modifiers on procedure parameters, so `character` without a length is an
@@ -52,20 +54,22 @@ unbounded blank-padded string (`bpchar`), not a one-character value.
 |---|---|---|
 | `webtransaction` | `in_cuenta character, in_description character, in_categoria character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_now timestamp without time zone` | “Transacción” submit on `/` |
 | `webtransfer` | `in_cuenta character, in_transfer character, in_description character, in_payee character, in_fecha timestamp without time zone, in_monto numeric, in_recibido numeric, in_memo character, in_now timestamp without time zone` | “Transferencia” submit on `/` |
+| `set_balance` | `in_cuenta character varying, in_fecha timestamp without time zone, in_balance double precision` | “Balance” submit on `/` |
 | `webmodification` | `in_id integer, in_cuenta character, in_transfer character, in_payee character, in_categoria character, in_fecha timestamp without time zone, in_monto numeric, in_memo character, in_description character, in_now timestamp without time zone` | “Modificación” submit in the edit modal on `/` |
 | `webduplication` | `in_id integer, in_now timestamp without time zone` | “Duplicar” submit in the edit modal on `/` |
 | `webdeletion` | `in_id integer` | “Eliminar” submit in the edit modal on `/` |
 
 #### Parameter sources
 
-The routes read submitted fields with `dict(request.form).values()`, so the order of the
-fields inside each `<form>` in `templates/json.html` is significant.
+The three operation forms on `/` submit named fields, so `app.py` reads `Cuenta`, `Fecha`,
+`Monto`, etc. by name. The edit modal and search offcanvas still use
+`dict(request.form).values()`, so their field order remains significant.
 
 ##### `webtransaction` – 8 parameters
 
-Called by `new_transaction()` (`app.py`), which takes the form values
-`[Cuenta, Payee, Categoria, Fecha, Monto, Memo, Descripcion]`, appends the server time,
-and reorders them as `[0, 6, 2, 1, 3, 4, 5, 7]`.
+Called by `new_transaction()` (`app.py`), which reads
+`[Cuenta, Payee, Categoria, Fecha, Monto, Memo, Descripcion]` by name, appends the server
+time, and reorders them as `[0, 6, 2, 1, 3, 4, 5, 7]`.
 
 | # | Parameter | Type | Supplied value |
 |---|---|---|---|
@@ -80,9 +84,9 @@ and reorders them as `[0, 6, 2, 1, 3, 4, 5, 7]`.
 
 ##### `webtransfer` – 9 parameters
 
-Called by `new_transfer()` (`app.py`), which takes
-`[Cuenta, Payee, Fecha, Monto, Memo, Descripcion, Transferencia, MontoRec]`, appends the
-server time, and reorders them as `[0, 6, 5, 1, 2, 3, 7, 4, 8]`.
+Called by `new_transfer()` (`app.py`), which reads
+`[Cuenta, Payee, Fecha, Monto, Memo, Descripcion, Transferencia, MontoRec]` by name, appends
+the server time, and reorders them as `[0, 6, 5, 1, 2, 3, 7, 4, 8]`.
 
 | # | Parameter | Type | Supplied value |
 |---|---|---|---|
@@ -95,6 +99,22 @@ server time, and reorders them as `[0, 6, 5, 1, 2, 3, 7, 4, 8]`.
 | 7 | `in_recibido` | `numeric` | `MontoRec` input (amount credited to the destination) |
 | 8 | `in_memo` | `character` | `Memo` input |
 | 9 | `in_now` | `timestamp` | Server-side `datetime.now()` at submission |
+
+##### `set_balance` – 3 parameters
+
+Called by the **Balance** pane on `/`. `app.py` reads the fields by name, parses `Fecha`
+with `%Y-%m-%dT%H:%M`, converts `Balance` to `float`, and calls
+`set_balance(cuenta, fecha, objetivo)`. The procedure stamps `Input` itself.
+
+| # | Parameter | Type | Supplied value |
+|---|---|---|---|
+| 1 | `in_cuenta` | `character varying` | `Cuenta` select |
+| 2 | `in_fecha` | `timestamp` | `Fecha` input (`%Y-%m-%dT%H:%M`) |
+| 3 | `in_balance` | `double precision` | `Balance` input (target balance; may be zero or negative) |
+
+Before calling `set_balance`, the route calls `get_balance(cuenta, fecha)` to report the
+previous balance and the applied adjustment. The procedure inserts at most one row and
+does nothing if the account is already at the target within `0.005`.
 
 ##### `webmodification` – 10 parameters
 
@@ -199,17 +219,20 @@ CREATE OR REPLACE PROCEDURE public.webdeletion(
 
 #### Notes
 
-- Each form must keep its current field order, because the route maps values by position:
-  - `/` transaction/transfer form: `Cuenta, Payee, Categoria, Fecha, Monto, Memo, Descripcion, Transferencia, MontoRec, Operación`.
-  - Edit modal: `ID, Cuenta, Transfer, Payee, Categoria, Fecha, Monto, Memo, Descripcion, Operación`.
+- The edit modal form must keep its current field order, because the route maps values by
+  position: `ID, Cuenta, Transfer, Payee, Categoria, Fecha, Monto, Memo, Descripcion, Operación`.
+- The transaction, balance, and transfer forms on `/` are parsed by field name, so their
+  order is not significant.
 - Blank text inputs are converted to `NULL` before the call.
 - `Monto` and `MontoRec` arrive as strings and are cast to `numeric` by PostgreSQL. The
   target column `transacciones.monto` is `double precision`, so the procedure body relies
-  on the implicit `numeric` to `double precision` cast.
+  on the implicit `numeric` to `double precision` cast. The Balance target is converted to
+  `float` in `app.py` and passed to a `double precision` parameter.
 - `Fecha` must arrive as `YYYY-MM-DDTHH:MM` (HTML `datetime-local`); the route parses it
   with `datetime.strptime(..., "%Y-%m-%dT%H:%M")` and the DB columns are
   `timestamp without time zone`.
-- `in_now` is always appended by the server; it is never a form field.
+- `in_now` is always appended by the server for the `web*` procedures; it is never a form
+  field. `set_balance` stamps `Input = LOCALTIMESTAMP` inside the procedure.
 - `webduplication` copies the selected row and stamps `Fecha`, `Input`, and `Tags`
   (`web_dup`) from the server; the new `id` comes from the identity column.
 - The procedure parameters are unbounded, but the underlying `transacciones` columns are
@@ -220,8 +243,9 @@ CREATE OR REPLACE PROCEDURE public.webdeletion(
 
 ### Balance helpers (psql)
 
-These routines are for database maintenance; `app.py` does not call them. They work on one
-account at a time, in that account's own currency.
+The **Balance** pane on `/` calls both routines: `get_balance` to report the previous
+balance and `set_balance` to apply the target. They can also be used directly from psql.
+They work on one account at a time, in that account's own currency.
 
 | Routine | Signature | Purpose |
 |---|---|---|
@@ -456,6 +480,7 @@ nginx (`/etc/nginx/sites-available/trans_app.conf`) serves
 ├── requirements.txt          # Python dependencies
 ├── templates/
 │   ├── json.html             # Main transactions page
+│   ├── _operation_card.html  # New-operation tabs and forms
 │   ├── report.html           # Reports/analytics page
 │   └── out.html              # Access denied page
 └── static/

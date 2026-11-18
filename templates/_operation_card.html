@@ -1,0 +1,235 @@
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-white">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <h2 class="h5 mb-0">Nueva operación</h2>
+      {% set active_tab = active_tab|default('transaccion') %}
+      <ul class="nav nav-pills flex-wrap gap-2" id="operationTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link {% if active_tab == 'transaccion' %}active{% endif %}"
+                  id="tab-transaccion" data-bs-toggle="pill"
+                  data-bs-target="#pane-transaccion" type="button" role="tab"
+                  aria-controls="pane-transaccion"
+                  aria-selected="{{ 'true' if active_tab == 'transaccion' else 'false' }}">
+            Transacción
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link {% if active_tab == 'balance' %}active{% endif %}"
+                  id="tab-balance" data-bs-toggle="pill"
+                  data-bs-target="#pane-balance" type="button" role="tab"
+                  aria-controls="pane-balance"
+                  aria-selected="{{ 'true' if active_tab == 'balance' else 'false' }}">
+            Balance
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link {% if active_tab == 'transferencia' %}active{% endif %}"
+                  id="tab-transferencia" data-bs-toggle="pill"
+                  data-bs-target="#pane-transferencia" type="button" role="tab"
+                  aria-controls="pane-transferencia"
+                  aria-selected="{{ 'true' if active_tab == 'transferencia' else 'false' }}">
+            Transferencia
+          </button>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if balance_error %}
+    <div class="alert alert-danger" role="alert">{{ balance_error }}</div>
+    {% endif %}
+    {% if balance_result %}
+    <div class="alert alert-{{ 'success' if balance_result.changed else 'secondary' }}" role="alert">
+      {% if balance_result.changed %}
+      Balance fijado para <strong>{{ balance_result.cuenta }}</strong>
+      al {{ balance_result.fecha_label }}: <strong>{{ '%.2f'|format(balance_result.target) }}</strong>.
+      Balance anterior: {{ '%.2f'|format(balance_result.previous) }}.
+      Ajuste aplicado: <strong>{{ '%+.2f'|format(balance_result.delta) }}</strong>.
+      {% else %}
+      El balance de <strong>{{ balance_result.cuenta }}</strong>
+      al {{ balance_result.fecha_label }} ya era
+      {{ '%.2f'|format(balance_result.target) }}; no se creó ningún ajuste.
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="tab-content" id="operationTabsContent">
+      <div class="tab-pane fade {% if active_tab == 'transaccion' %}show active{% endif %}"
+           id="pane-transaccion" role="tabpanel" aria-labelledby="tab-transaccion">
+        <form action="/?secret={{secret}}" method="post" class="mb-0">
+          <input type="hidden" name="Operación" value="Transacción">
+          <div class="row">
+            <div class="col-md-4">
+              <label for="Cuenta">Cuenta:</label>
+              <select name="Cuenta" id="Cuenta" class="form-control" required>
+                {% for u in cuentas %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="Payee">Payee:</label>
+              <input type="text" name="Payee" id="Payee" placeholder="Payee"
+                     list="payeelist" class="form-control">
+              <datalist id="payeelist">
+                {% for u in payees %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-4">
+              <label for="Categoria">Categoría:</label>
+              <input type="text" name="Categoria" id="Categoria" placeholder="Categoría"
+                     list="CatList" class="form-control">
+              <datalist id="CatList">
+                {% for u in categs %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <label for="Fecha">Fecha:</label>
+              <input type="datetime-local" name="Fecha" id="Fecha"
+                     value="{{now}}" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+              <label for="Monto">Monto:</label>
+              <input type="number" min="-1000000" max="1000000" step="0.01"
+                     name="Monto" id="Monto" value="-0.00" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+              <label for="Memo">Memo:</label>
+              <input type="text" name="Memo" id="Memo" placeholder="Memo" class="form-control">
+            </div>
+          </div>
+          <div class="row align-items-end">
+            <div class="col-md-10">
+              <label for="Descripcion" class="col-form-label">Descripción:</label>
+              <input type="text" name="Descripcion" id="Descripcion"
+                     placeholder="Descripción" class="form-control">
+            </div>
+            <div class="col-md-2">
+              <div class="d-grid">
+                <button type="submit" class="btn btn-primary">Registrar</button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="tab-pane fade {% if active_tab == 'balance' %}show active{% endif %}"
+           id="pane-balance" role="tabpanel" aria-labelledby="tab-balance">
+        <form action="/?secret={{secret}}" method="post" class="mb-0">
+          <input type="hidden" name="Operación" value="Balance">
+          <div class="row">
+            <div class="col-md-4">
+              <label for="Cuenta-balance">Cuenta:</label>
+              <select name="Cuenta" id="Cuenta-balance" class="form-control" required>
+                {% for u in cuentas %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="Fecha-balance">Fecha:</label>
+              <input type="datetime-local" name="Fecha" id="Fecha-balance"
+                     value="{{now}}" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label for="Balance-target">Balance objetivo:</label>
+              <input type="number" step="0.01"
+                     name="Balance" id="Balance-target" placeholder="0.00"
+                     class="form-control" required>
+            </div>
+          </div>
+          <div class="row align-items-end">
+            <div class="col-md-9">
+              <div class="form-text mb-2">
+                Se registrará un ajuste un instante antes de la fecha indicada, de modo
+                que el balance a esa fecha sea el valor objetivo. El ajuste usa la
+                categoría «Sin Categoría» y la etiqueta «balance».
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="d-grid">
+                <button type="submit" class="btn btn-success">Fijar balance</button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="tab-pane fade {% if active_tab == 'transferencia' %}show active{% endif %}"
+           id="pane-transferencia" role="tabpanel" aria-labelledby="tab-transferencia">
+        <form action="/?secret={{secret}}" method="post" class="mb-0">
+          <input type="hidden" name="Operación" value="Transferencia">
+          <div class="row">
+            <div class="col-md-4">
+              <label for="Cuenta-transfer">Desde:</label>
+              <select name="Cuenta" id="Cuenta-transfer" class="form-control" required>
+                {% for u in cuentas %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="Transferencia">Hacia:</label>
+              <select name="Transferencia" id="Transferencia" class="form-control" required>
+                {% for u in cuentas %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="Fecha-transfer">Fecha:</label>
+              <input type="datetime-local" name="Fecha" id="Fecha-transfer"
+                     value="{{now}}" class="form-control" required>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-4">
+              <label for="Monto-transfer">Monto enviado:</label>
+              <input type="number" min="-1000000" max="1000000" step="0.01"
+                     name="Monto" id="Monto-transfer" placeholder="0.00"
+                     class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label for="MontoRec-transfer">Monto recibido:</label>
+              <input type="number" min="-1000000" max="1000000" step="0.01"
+                     name="MontoRec" id="MontoRec-transfer" placeholder="0.00"
+                     class="form-control" required>
+            </div>
+            <div class="col-md-4">
+              <label for="Payee-transfer">Payee:</label>
+              <input type="text" name="Payee" id="Payee-transfer" placeholder="Payee"
+                     list="payeelist-transfer" class="form-control">
+              <datalist id="payeelist-transfer">
+                {% for u in payees %}
+                <option value="{{u[0]}}">{{u[0]}}</option>
+                {% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <div class="row align-items-end">
+            <div class="col-md-4">
+              <label for="Memo-transfer">Memo:</label>
+              <input type="text" name="Memo" id="Memo-transfer" placeholder="Memo" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label for="Descripcion-transfer">Descripción:</label>
+              <input type="text" name="Descripcion" id="Descripcion-transfer"
+                     placeholder="Descripción" class="form-control">
+            </div>
+            <div class="col-md-2">
+              <div class="d-grid">
+                <button type="submit" class="btn btn-primary">Transferir</button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
